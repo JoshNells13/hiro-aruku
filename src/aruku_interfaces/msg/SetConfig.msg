@@ -1,0 +1,2 @@
+string json_kinematic
+string json_walking

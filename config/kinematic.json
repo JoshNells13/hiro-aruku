@@ -1,0 +1,48 @@
+{
+  "ratio": {
+    "period_time": 600.0,
+    "dsp_ratio": 0.2,
+    "foot_height": 18.0,
+    "swing_right_left": 12.0,
+    "swing_up_down": 3.0,
+    "arm_swing_gain": 0.0,
+    "backward_hip_comp_ratio": 0.0,
+    "forward_hip_comp_ratio": 0.0,
+    "foot_comp_ratio": 0.0,
+    "dsp_comp_ratio": 0.0,
+    "forward_period_comp_ratio": 0.0,
+    "backward_period_comp_ratio": 0.0,
+    "move_accel_ratio": 0.3,
+    "foot_accel_ratio": 0.3
+  },
+  "length": {
+    "thigh_length": 134.0,
+    "calf_length": 111.7,
+    "ankle_length": 34.74,
+    "leg_length": 280.44
+  },
+  "offset": {
+    "x_offset": -22.0,
+    "y_offset": 0.0,
+    "z_offset": 32.0,
+    "yaw_offset": 0.0,
+    "roll_offset": 0.0,
+    "pitch_offset": -4.0,
+    "hip_pitch_offset": -14.0
+  },
+  "balance_pause": {
+    "enable": false,
+    "roll_pause_threshold": 0.0,
+    "roll_resume_threshold": 0.0,
+    "max_pause_counter": 0,
+    "max_pause_speed": 0.0
+  },
+  "in_walk_kick": {
+    "x_amplitude": 0.0,
+    "y_amplitude": 0.0,
+    "z_amplitude": 0.0,
+    "start_ratio": 1.0,
+    "return_ratio": 0.0,
+    "period_scale": 1.0
+  }
+}
