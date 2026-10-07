@@ -1,6 +1,6 @@
-# ROBOTIS OP3 & Humanoid MuJoCo Simulation - ROS 2 Jazzy
+# Hiro & Humanoid MuJoCo Simulation - ROS 2 Jazzy
 
-Proyek simulasi robot humanoid (**ROBOTIS OP3** / **Hiro Robot**) menggunakan physics engine **MuJoCo** yang terintegrasi penuh ke dalam ekosistem **ROS 2 Jazzy Jalisco** pada sistem operasi **Ubuntu 24.04 LTS (Noble Numbat)**.
+Proyek simulasi robot humanoid (**Hiro Robot**) menggunakan physics engine **MuJoCo** yang terintegrasi penuh ke dalam ekosistem **ROS 2 Jazzy Jalisco** pada sistem operasi **Ubuntu 24.04 LTS (Noble Numbat)**.
 
 Repositori ini telah dilengkapi dengan walking engine robot humanoid **`aruku`** (kinematika dan gait generator), modul manajemen sendi Dynamixel (**`tachimawari`**), modul IMU sensor (**`kansei`**), serta panduan lengkap untuk mengimpor **model robot kustom dari luar** (misal Onshape, SolidWorks, URDF, MJCF).
 
