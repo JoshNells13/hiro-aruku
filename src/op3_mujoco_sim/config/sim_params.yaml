@@ -1,18 +1,5 @@
 mujoco_sim_node:
   ros__parameters:
-    # Model configuration (kosong berarti menggunakan model default paket: models/scene.xml)
     model_path: ""
-
-    # Parameter Simulasi
-    physics_rate: 500.0   # Frekuensi step fisika MuJoCo (Hz)
-    publish_rate: 50.0    # Frekuensi publikasi topik ROS 2 (Hz)
-    use_gui: true         # Tampilkan window MuJoCo Passive Viewer
-    publish_tf: true      # Publikasikan transformasi TF base_link terhadap odom
-
-    # Frame ID untuk TF dan IMU
-    odom_frame: "odom"
-    base_frame: "base_link"
-    imu_frame: "imu_link"
-
-    # Default position standing (posisi awal servo OP3 dalam radian)
-    default_pose: "stand"
+    use_gui: true
+    imu_rate: 100.0

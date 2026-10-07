@@ -1,449 +1,241 @@
 #!/usr/bin/env python3
 """
-Node Simulasi MuJoCo untuk Robot ROBOTIS OP3 pada ROS 2 Jazzy.
+Node simulasi MuJoCo untuk robot humanoid Hiro + walking engine aruku.
 
-Node ini memuat model MJCF ROBOTIS OP3, menjalankan engine fisika MuJoCo,
-membuka interactive 3D viewer (opsional), serta menjembatani komunikasi data
-ke ekosistem ROS 2 (JointState, IMU, TF, dan Joint Commands).
+Alur data:
+    aruku  --/joint/set_joints-->  sim (posisi servo, derajat)
+    sim    --/walking/imu------->  aruku (roll/pitch/yaw badan, derajat)
+
+Saat start, robot langsung diletakkan dalam pose berdiri (lutut sedikit
+ditekuk, sama seperti pose diam aruku) dengan telapak kaki tepat di lantai,
+sehingga robot tegak sejak awal dan tidak jatuh.
 """
 
-import os
-import sys
-import time
-import threading
-from ament_index_python.packages import get_package_share_directory
-
-import rclpy
-from rclpy.node import Node
-from rclpy.executors import SingleThreadedExecutor
-
-from sensor_msgs.msg import JointState, Imu
-from std_msgs.msg import Float64MultiArray
-from geometry_msgs.msg import TransformStamped
-from std_srvs.srv import Trigger, SetBool
-import tf2_ros
-
 import math
+import os
+import threading
+import time
+
 import mujoco
+import numpy as np
+import rclpy
+from ament_index_python.packages import get_package_share_directory
+from rclpy.executors import SingleThreadedExecutor
+from rclpy.node import Node
+
+from aruku_interfaces.msg import Imu, SetJoints
+
 try:
     import mujoco.viewer
     VIEWER_AVAILABLE = True
 except ImportError:
     VIEWER_AVAILABLE = False
 
-try:
-    from tachimawari_interfaces.msg import SetJoints
-    TACHIMAWARI_AVAILABLE = True
-except ImportError:
-    TACHIMAWARI_AVAILABLE = False
 
-try:
-    from kansei_interfaces.msg import Status as KanseiStatus, Unit as KanseiUnit
-    KANSEI_AVAILABLE = True
-except ImportError:
-    KANSEI_AVAILABLE = False
+# ID servo aruku -> (nama joint MuJoCo, arah). Sudut MuJoCo = radians(deg) * arah
+SERVO_MAP = {
+    1: ('right_shoulder_pitch', -1.0),
+    2: ('left_shoulder_pitch', 1.0),
+    3: ('right_shoulder_roll', -1.0),
+    4: ('left_shoulder_roll', 1.0),
+    5: ('right_elbow', -1.0),
+    6: ('left_elbow', -1.0),
+    7: ('right_hip_yaw', -1.0),
+    8: ('left_hip_yaw', -1.0),
+    9: ('right_hip_roll', -1.0),
+    10: ('left_hip_roll', -1.0),
+    11: ('right_hip_pitch', 1.0),
+    12: ('left_hip_pitch', -1.0),
+    13: ('right_knee', 1.0),
+    14: ('left_knee', -1.0),
+    15: ('right_ankle_pitch', -1.0),
+    16: ('left_ankle_pitch', 1.0),
+    17: ('right_ankle_roll', 1.0),
+    18: ('left_ankle_roll', 1.0),
+    19: ('neck_yaw', 1.0),
+    20: ('neck_pitch', 1.0),
+}
+
+# Pose berdiri awal (derajat, konvensi ID servo aruku). Nilai ini sama dengan
+# keluaran aruku saat robot diam (config/walking.json + kinematic.json), jadi
+# robot tegak sempurna sejak awal dan tidak ada hentakan saat aruku aktif.
+STAND_POSE = {
+    1: 4.92, 2: -4.92, 3: -14.94, 4: 14.94, 5: 29.97, 6: -29.97,
+    7: 0.0, 8: 0.0, 9: 0.0, 10: 0.0,
+    11: -8.17, 12: 8.17, 13: 17.93, 14: -17.93, 15: 9.76, 16: -9.76,
+    17: 0.0, 18: 0.0, 19: 0.0, 20: 0.0,
+}
 
 
 class MujocoSimNode(Node):
+
     def __init__(self):
-        super().__init__('op3_mujoco_sim_node')
+        super().__init__('mujoco_sim_node')
 
-        # Deklarasi Parameter ROS 2
-        self.declare_parameter('model_path', '')
-        self.declare_parameter('physics_rate', 500.0)  # Hz
-        self.declare_parameter('publish_rate', 50.0)   # Hz
+        try:
+            default_model = os.path.join(
+                get_package_share_directory('op3_mujoco_sim'), 'models', 'scene.xml')
+        except Exception:
+            default_model = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), '..', 'models', 'scene.xml'))
+
+        self.declare_parameter('model_path', default_model)
         self.declare_parameter('use_gui', True)
-        self.declare_parameter('publish_tf', True)
-        self.declare_parameter('odom_frame', 'odom')
-        self.declare_frame_parameter = self.declare_parameter('base_frame', 'base_link')
-        self.declare_parameter('imu_frame', 'imu_link')
+        self.declare_parameter('imu_rate', 100.0)
 
-        # Dapatkan nilai parameter
-        model_path_param = self.get_parameter('model_path').get_parameter_value().string_value
-        self.physics_rate = self.get_parameter('physics_rate').get_parameter_value().double_value
-        self.publish_rate = self.get_parameter('publish_rate').get_parameter_value().double_value
-        self.use_gui = self.get_parameter('use_gui').get_parameter_value().bool_value
-        self.publish_tf = self.get_parameter('publish_tf').get_parameter_value().bool_value
-        self.odom_frame = self.get_parameter('odom_frame').get_parameter_value().string_value
-        self.base_frame = self.get_parameter('base_frame').get_parameter_value().string_value
-        self.imu_frame = self.get_parameter('imu_frame').get_parameter_value().string_value
+        model_path = self.get_parameter('model_path').value or default_model
+        self.use_gui = self.get_parameter('use_gui').value
+        imu_rate = self.get_parameter('imu_rate').value
 
-        # Tentukan Path Model
-        if not model_path_param:
-            try:
-                pkg_dir = get_package_share_directory('op3_mujoco_sim')
-                self.model_path = os.path.join(pkg_dir, 'models', 'scene.xml')
-            except Exception:
-                # Fallback ke path relatif direktori kerja
-                base_dir = os.path.abspath(os.path.dirname(__file__))
-                self.model_path = os.path.join(base_dir, '..', 'models', 'scene.xml')
-        else:
-            self.model_path = model_path_param
-
-        if not os.path.exists(self.model_path):
-            self.get_logger().error(f'Model MuJoCo tidak ditemukan di: {self.model_path}')
-            raise FileNotFoundError(f'Model MuJoCo tidak ditemukan di: {self.model_path}')
-
-        self.get_logger().info(f'Memuat model MuJoCo: {self.model_path}')
-
-        # Muat Model dan Data MuJoCo
-        self.model = mujoco.MjModel.from_xml_path(self.model_path)
+        self.get_logger().info(f'Memuat model MuJoCo: {model_path}')
+        self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
+        self.lock = threading.Lock()
 
-        # Set timestep fisika
-        self.model.opt.timestep = 1.0 / self.physics_rate
+        self.torso_id = mujoco.mj_name2id(
+            self.model, mujoco.mjtObj.mjOBJ_BODY, 'torso_kidsize25')
 
-        # Threading re-entrant lock untuk sinkronisasi akses ke data MuJoCo
-        self.lock = threading.RLock()
-        self.is_paused = False
-        self.shutdown_requested = False
+        # ID servo -> (index qpos, index actuator, arah)
+        self.servos = {}
+        for servo_id, (name, sign) in SERVO_MAP.items():
+            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
+            aid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, name)
+            if jid < 0 or aid < 0:
+                self.get_logger().warn(f'Joint/actuator "{name}" tidak ada di model')
+                continue
+            self.servos[servo_id] = (self.model.jnt_qposadr[jid], aid, sign)
 
-        # Petakan Sendi (Joints) & Aktuator
-        self._setup_joint_mappings()
+        self._setup_standing_pose()
 
-        # Petakan Sensor IMU jika ada
-        self._setup_sensor_mappings()
+        self.create_subscription(SetJoints, '/joint/set_joints', self._on_set_joints, 10)
+        self.imu_pub = self.create_publisher(Imu, '/walking/imu', 10)
+        self.create_timer(1.0 / imu_rate, self._publish_imu)
 
-        # Inisialisasi Publisher ROS 2
-        self.joint_state_pub = self.create_publisher(JointState, '/joint_states', 10)
-        self.imu_pub = self.create_publisher(Imu, '/imu/data', 10)
-        if KANSEI_AVAILABLE:
-            self.kansei_status_pub = self.create_publisher(KanseiStatus, '/measurement/status', 10)
-            self.kansei_unit_pub = self.create_publisher(KanseiUnit, '/measurement/unit', 10)
-            self.get_logger().info('Publisher /measurement/status & /measurement/unit aktif (Kansei/Aruku bridge).')
-        if self.publish_tf:
-            self.tf_broadcaster = tf2_ros.TransformBroadcaster(self)
+        self.get_logger().info('Simulasi siap. Robot berdiri tegak, menunggu aruku...')
 
-        # Inisialisasi Subscriber ROS 2
-        self.joint_cmd_sub = self.create_subscription(
-            Float64MultiArray,
-            '/op3/joint_commands',
-            self._joint_commands_callback,
-            10
-        )
-        self.named_joint_cmd_sub = self.create_subscription(
-            JointState,
-            '/op3/named_joint_command',
-            self._named_joint_command_callback,
-            10
-        )
-        if TACHIMAWARI_AVAILABLE:
-            self.set_joints_sub = self.create_subscription(
-                SetJoints,
-                '/joint/set_joints',
-                self._set_joints_callback,
-                10
-            )
-            self.get_logger().info('Berlangganan ke /joint/set_joints (Tachimawari/Aruku bridge aktif).')
+    # ------------------------------------------------------------------ setup
+    def _setup_standing_pose(self):
+        """Pasang pose berdiri dan letakkan telapak kaki tepat di lantai."""
+        m, d = self.model, self.data
+        mujoco.mj_resetData(m, d)
 
-        # Inisialisasi Service ROS 2
-        self.reset_srv = self.create_service(Trigger, '/reset_simulation', self._reset_callback)
-        self.pause_srv = self.create_service(SetBool, '/pause_simulation', self._pause_callback)
+        # Badan tegak di atas origin
+        d.qpos[0:3] = [0.0, 0.0, 0.5]
+        d.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
 
-        # Timer untuk publikasi state ROS 2
-        pub_period = 1.0 / self.publish_rate
-        self.pub_timer = self.create_timer(pub_period, self._publish_state)
+        # Sendi = pose berdiri, aktuator menahan pose yang sama
+        for servo_id, deg in STAND_POSE.items():
+            if servo_id in self.servos:
+                qadr, aid, sign = self.servos[servo_id]
+                d.qpos[qadr] = math.radians(deg) * sign
+                d.ctrl[aid] = d.qpos[qadr]
 
-        # Set posisi awal robot berdiri
-        self._apply_initial_standing_pose()
+        # Turunkan badan sampai titik terendah robot menyentuh lantai (z = 0)
+        mujoco.mj_forward(m, d)
+        d.qpos[2] -= self._lowest_point_z() - 0.0005
+        mujoco.mj_forward(m, d)
 
-        self.get_logger().info('op3_mujoco_sim_node berhasil diinisialisasi.')
-        self.get_logger().info(f'Physics Rate: {self.physics_rate} Hz | Publish Rate: {self.publish_rate} Hz')
-        self.get_logger().info(f'GUI Mode: {self.use_gui} (Viewer available: {VIEWER_AVAILABLE})')
+        # Jadikan pose ini sebagai pose reset (tombol Backspace di viewer)
+        m.qpos0[:] = d.qpos
+        self.stand_ctrl = d.ctrl.copy()
 
-    def _setup_joint_mappings(self):
-        """Memetakan nama joint dan actuator dengan indeks pada model MuJoCo."""
-        self.joint_names = []
-        self.joint_qpos_adr = []
-        self.joint_dof_adr = []
+    def _lowest_point_z(self):
+        """Koordinat z terendah dari semua mesh collision robot."""
+        m, d = self.model, self.data
+        lowest = np.inf
+        for g in range(m.ngeom):
+            if m.geom_bodyid[g] == 0 or m.geom_type[g] != mujoco.mjtGeom.mjGEOM_MESH:
+                continue
+            if m.geom_contype[g] == 0 and m.geom_conaffinity[g] == 0:
+                continue  # geom visual saja
+            mesh = m.geom_dataid[g]
+            start, num = m.mesh_vertadr[mesh], m.mesh_vertnum[mesh]
+            verts = m.mesh_vert[start:start + num]
+            world_z = verts @ d.geom_xmat[g].reshape(3, 3)[2] + d.geom_xpos[g][2]
+            lowest = min(lowest, world_z.min())
+        return lowest
 
-        for i in range(self.model.njnt):
-            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_JOINT, i)
-            # Lewati freejoint tanpa nama (floating base)
-            if name:
-                self.joint_names.append(name)
-                self.joint_qpos_adr.append(self.model.jnt_qposadr[i])
-                self.joint_dof_adr.append(self.model.jnt_dofadr[i])
-
-        self.actuator_names = []
-        self.actuator_map = {}  # actuator_name -> index
-        self.joint_to_actuator = {}  # joint_name -> actuator index
-
-        for i in range(self.model.nu):
-            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_ACTUATOR, i)
-            self.actuator_names.append(name)
-            self.actuator_map[name] = i
-            # Jika actuator name berakhiran _act, petakan ke joint name
-            if name.endswith('_act'):
-                jname = name[:-4]
-                self.joint_to_actuator[jname] = i
-            elif name in self.joint_names:
-                self.joint_to_actuator[name] = i
-
-        self.get_logger().info(
-            f'Terdeteksi {len(self.joint_names)} joint terukur dan {len(self.actuator_names)} actuator.'
-        )
-
-    def _setup_sensor_mappings(self):
-        """Memetakan sensor akselerometer dan giroskop serta body torso."""
-        self.accel_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, 'imu_accel')
-        self.gyro_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_SENSOR, 'imu_gyro')
-        self.torso_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'torso_kidsize25')
-        if self.torso_body_id == -1:
-            self.torso_body_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'body_link')
-
-        self.has_accel = (self.accel_id != -1)
-        self.has_gyro = (self.gyro_id != -1)
-        if self.has_accel and self.has_gyro:
-            self.get_logger().info('Sensor IMU terkonfigurasi (imu_accel & imu_gyro).')
-
-    def _apply_initial_standing_pose(self):
-        """Mengatur pose awal robot Hiro agar stabil dan berdiri seimbang."""
-        with self.lock:
-            # Set ketinggian root link Hiro agar sol sepatu pas menyentuh lantai (posisi z = 0.2897m)
-            if self.model.nq >= 7:
-                self.data.qpos[0] = 0.0
-                self.data.qpos[1] = 0.0
-                self.data.qpos[2] = 0.2897
-                self.data.qpos[3] = 1.0  # quat w
-                self.data.qpos[4] = 0.0  # quat x
-                self.data.qpos[5] = 0.0  # quat y
-                self.data.qpos[6] = 0.0  # quat z
-
-            pose = {
-                'right_shoulder_pitch': math.radians(5.0),
-                'right_shoulder_roll': math.radians(-15.0),
-                'right_elbow': math.radians(30.0),
-                'left_shoulder_pitch': math.radians(-5.0),
-                'left_shoulder_roll': math.radians(15.0),
-                'left_elbow': math.radians(-30.0),
-                'neck_yaw': 0.0,
-                'neck_pitch': 0.0,
-            }
-            for jname, val in pose.items():
-                if jname in self.joint_to_actuator:
-                    act_idx = self.joint_to_actuator[jname]
-                    self.data.ctrl[act_idx] = val
-
-            mujoco.mj_forward(self.model, self.data)
-
-    def _joint_commands_callback(self, msg: Float64MultiArray):
-        """Menerima array target posisi aktuator (Float64MultiArray)."""
-        with self.lock:
-            count = min(len(msg.data), self.model.nu)
-            for i in range(count):
-                self.data.ctrl[i] = msg.data[i]
-
-    def _named_joint_command_callback(self, msg: JointState):
-        """Menerima perintah posisi sendi berdasarkan nama (JointState)."""
-        with self.lock:
-            for name, pos in zip(msg.name, msg.position):
-                if name in self.joint_to_actuator:
-                    act_idx = self.joint_to_actuator[name]
-                    self.data.ctrl[act_idx] = pos
-                elif name in self.actuator_map:
-                    act_idx = self.actuator_map[name]
-                    self.data.ctrl[act_idx] = pos
-
-    def _set_joints_callback(self, msg):
-        """Menerima perintah posisi sendi dari paket aruku / tachimawari (SetJoints)."""
-        joint_id_map = {
-            1: ('right_shoulder_pitch', -1.0),
-            2: ('left_shoulder_pitch', 1.0),
-            3: ('right_shoulder_roll', -1.0),
-            4: ('left_shoulder_roll', 1.0),
-            5: ('right_elbow', -1.0),
-            6: ('left_elbow', -1.0),
-            7: ('right_hip_yaw', -1.0),
-            8: ('left_hip_yaw', -1.0),
-            9: ('right_hip_roll', -1.0),
-            10: ('left_hip_roll', -1.0),
-            11: ('right_hip_pitch', -1.0),
-            12: ('left_hip_pitch', 1.0),
-            13: ('right_knee', 1.0),
-            14: ('left_knee', -1.0),
-            15: ('right_ankle_pitch', -1.0),
-            16: ('left_ankle_pitch', 1.0),
-            17: ('right_ankle_roll', 1.0),
-            18: ('left_ankle_roll', 1.0),
-            19: ('neck_yaw', 1.0),
-            20: ('neck_pitch', 1.0),
-        }
-        with self.lock:
-            for j in msg.joints:
-                if j.id in joint_id_map:
-                    name, sign = joint_id_map[j.id]
-                    if name in self.joint_to_actuator:
-                        act_idx = self.joint_to_actuator[name]
-                        rad = math.radians(j.position) * sign
-                        self.data.ctrl[act_idx] = rad
-
-    def _reset_callback(self, request, response):
-        """Service handler untuk me-reset simulasi ke kondisi awal."""
-        self.get_logger().info('Reset simulasi diminta.')
+    def reset(self):
         with self.lock:
             mujoco.mj_resetData(self.model, self.data)
-            self._apply_initial_standing_pose()
-        response.success = True
-        response.message = 'Simulasi MuJoCo berhasil direset.'
-        return response
+            self.data.ctrl[:] = self.stand_ctrl
 
-    def _pause_callback(self, request, response):
-        """Service handler untuk pause / resume simulasi fisika."""
-        self.is_paused = request.data
-        status = 'dijeda' if self.is_paused else 'dilanjutkan'
-        self.get_logger().info(f'Simulasi {status}.')
-        response.success = True
-        response.message = f'Simulasi {status}.'
-        return response
-
-    def _publish_state(self):
-        """Mempublikasikan /joint_states, /imu/data, dan TF transform."""
-        now = self.get_clock().now().to_msg()
-
+    # -------------------------------------------------------------- ROS I/O
+    def _on_set_joints(self, msg: SetJoints):
         with self.lock:
-            # 1. Publikasikan JointState
-            js_msg = JointState()
-            js_msg.header.stamp = now
-            js_msg.name = self.joint_names
-            js_msg.position = [float(self.data.qpos[adr]) for adr in self.joint_qpos_adr]
-            js_msg.velocity = [float(self.data.qvel[adr]) for adr in self.joint_dof_adr]
-            js_msg.effort = [float(self.data.qfrc_actuator[adr]) for adr in self.joint_dof_adr]
-            self.joint_state_pub.publish(js_msg)
+            for joint in msg.joints:
+                if joint.id in self.servos:
+                    _, aid, sign = self.servos[joint.id]
+                    self.data.ctrl[aid] = math.radians(joint.position) * sign
 
-            # 2. Publikasikan Imu
-            imu_msg = Imu()
-            imu_msg.header.stamp = now
-            imu_msg.header.frame_id = self.imu_frame
+    def _publish_imu(self):
+        with self.lock:
+            R = self.data.xmat[self.torso_id].reshape(3, 3)
+            # Arah gravitasi dalam frame badan (depan robot = -y, kiri = +x)
+            roll = math.atan2(-R[2, 0], R[2, 2])
+            pitch = math.atan2(R[2, 1], R[2, 2])
+            yaw = math.atan2(R[1, 0], R[0, 0])
 
-            # Orientation dari floating base (MuJoCo format: [w, x, y, z] -> ROS: [x, y, z, w])
-            if self.model.nq >= 7:
-                imu_msg.orientation.w = float(self.data.qpos[3])
-                imu_msg.orientation.x = float(self.data.qpos[4])
-                imu_msg.orientation.y = float(self.data.qpos[5])
-                imu_msg.orientation.z = float(self.data.qpos[6])
+        msg = Imu()
+        msg.roll = math.degrees(roll)
+        msg.pitch = math.degrees(pitch)
+        msg.yaw = math.degrees(yaw)
+        self.imu_pub.publish(msg)
 
-            if self.has_accel:
-                adr = self.model.sensor_adr[self.accel_id]
-                imu_msg.linear_acceleration.x = float(self.data.sensordata[adr])
-                imu_msg.linear_acceleration.y = float(self.data.sensordata[adr + 1])
-                imu_msg.linear_acceleration.z = float(self.data.sensordata[adr + 2])
+    # -------------------------------------------------------------- physics
+    def step(self):
+        with self.lock:
+            mujoco.mj_step(self.model, self.data)
 
-            if self.has_gyro:
-                adr = self.model.sensor_adr[self.gyro_id]
-                imu_msg.angular_velocity.x = float(self.data.sensordata[adr])
-                imu_msg.angular_velocity.y = float(self.data.sensordata[adr + 1])
-                imu_msg.angular_velocity.z = float(self.data.sensordata[adr + 2])
 
-            self.imu_pub.publish(imu_msg)
+def run_realtime(node, viewer=None):
+    """Loop fisika real-time; viewer di-refresh ~60 FPS."""
+    dt = node.model.opt.timestep
+    sim_start = node.data.time
+    wall_start = time.perf_counter()
+    last_sync = 0.0
 
-            # 3. Publikasikan Kansei Status & Unit untuk paket Aruku
-            if KANSEI_AVAILABLE and self.torso_body_id != -1:
-                R = self.data.xmat[self.torso_body_id].reshape(3, 3)
-                pitch_deg = math.degrees(math.atan2(-R[1, 2], R[2, 2]))
-                roll_deg = math.degrees(math.atan2(R[0, 2], R[2, 2]))
-                yaw_deg = math.degrees(math.atan2(-R[0, 1], R[0, 0]))
+    while rclpy.ok() and (viewer is None or viewer.is_running()):
+        node.step()
 
-                k_status = KanseiStatus()
-                k_status.is_calibrated = True
-                k_status.orientation.roll = float(roll_deg)
-                k_status.orientation.pitch = float(pitch_deg)
-                k_status.orientation.yaw = float(yaw_deg)
-                k_status.gravity.x = float(R[0, 2] * 9.80665)
-                k_status.gravity.y = float(R[1, 2] * 9.80665)
-                k_status.gravity.z = float(R[2, 2] * 9.80665)
-                self.kansei_status_pub.publish(k_status)
+        now = time.perf_counter()
+        if viewer is not None and now - last_sync > 1.0 / 60.0:
+            viewer.sync()
+            last_sync = now
 
-                k_unit = KanseiUnit()
-                if self.has_gyro:
-                    adr = self.model.sensor_adr[self.gyro_id]
-                    k_unit.gyro.roll = float(self.data.sensordata[adr + 1])
-                    k_unit.gyro.pitch = float(self.data.sensordata[adr])
-                    k_unit.gyro.yaw = float(self.data.sensordata[adr + 2])
-                if self.has_accel:
-                    adr = self.model.sensor_adr[self.accel_id]
-                    k_unit.accelero.x = float(self.data.sensordata[adr])
-                    k_unit.accelero.y = float(self.data.sensordata[adr + 1])
-                    k_unit.accelero.z = float(self.data.sensordata[adr + 2])
-                self.kansei_unit_pub.publish(k_unit)
-
-            # 4. Publikasikan TF (odom -> base_link)
-            if self.publish_tf and self.model.nq >= 7:
-                tf_msg = TransformStamped()
-                tf_msg.header.stamp = now
-                tf_msg.header.frame_id = self.odom_frame
-                tf_msg.child_frame_id = self.base_frame
-
-                tf_msg.transform.translation.x = float(self.data.qpos[0])
-                tf_msg.transform.translation.y = float(self.data.qpos[1])
-                tf_msg.transform.translation.z = float(self.data.qpos[2])
-
-                tf_msg.transform.rotation.w = float(self.data.qpos[3])
-                tf_msg.transform.rotation.x = float(self.data.qpos[4])
-                tf_msg.transform.rotation.y = float(self.data.qpos[5])
-                tf_msg.transform.rotation.z = float(self.data.qpos[6])
-
-                self.tf_broadcaster.sendTransform(tf_msg)
-
-    def step_physics(self):
-        """Memajukan 1 langkah kalkulasi fisika MuJoCo."""
-        if not self.is_paused:
-            with self.lock:
-                mujoco.mj_step(self.model, self.data)
+        # Jika simulasi terlalu cepat dari waktu nyata, tunggu sebentar
+        ahead = (node.data.time - sim_start) - (now - wall_start)
+        if ahead > dt:
+            time.sleep(ahead)
+        elif ahead < -0.5:
+            # Tertinggal jauh (misal setelah reset): sinkronkan ulang jam
+            sim_start, wall_start = node.data.time, now
 
 
 def main(args=None):
     rclpy.init(args=args)
-    sim_node = MujocoSimNode()
+    node = MujocoSimNode()
 
-    # Jalankan ROS executor di background thread
     executor = SingleThreadedExecutor()
-    executor.add_node(sim_node)
-    executor_thread = threading.Thread(target=executor.spin, daemon=True)
-    executor_thread.start()
-
-    timestep = sim_node.model.opt.timestep
+    executor.add_node(node)
+    threading.Thread(target=executor.spin, daemon=True).start()
 
     try:
-        # Jika mode GUI aktif dan modul viewer tersedia, jalankan MuJoCo Passive Viewer
-        if sim_node.use_gui and VIEWER_AVAILABLE:
-            with mujoco.viewer.launch_passive(sim_node.model, sim_node.data) as viewer:
-                viewer.cam.lookat = [0.0, 0.0, 0.25]
+        if node.use_gui and VIEWER_AVAILABLE:
+            with mujoco.viewer.launch_passive(node.model, node.data) as viewer:
+                viewer.cam.lookat[:] = [0.0, 0.0, 0.2]
                 viewer.cam.distance = 1.2
                 viewer.cam.elevation = -15.0
                 viewer.cam.azimuth = 135.0
-
-                sim_node.get_logger().info('MuJoCo Passive Viewer berhasil dibuka.')
-
-                while rclpy.ok() and viewer.is_running() and not sim_node.shutdown_requested:
-                    step_start = time.time()
-                    sim_node.step_physics()
-                    viewer.sync()
-
-                    # Batasi kecepatan step ke real-time
-                    elapsed = time.time() - step_start
-                    sleep_time = timestep - elapsed
-                    if sleep_time > 0:
-                        time.sleep(sleep_time)
-
+                run_realtime(node, viewer)
         else:
-            # Mode Headless (tanpa GUI Viewer)
-            sim_node.get_logger().info('Menjalankan simulasi dalam mode Headless.')
-            while rclpy.ok() and not sim_node.shutdown_requested:
-                step_start = time.time()
-                sim_node.step_physics()
-
-                elapsed = time.time() - step_start
-                sleep_time = timestep - elapsed
-                if sleep_time > 0:
-                    time.sleep(sleep_time)
-
+            node.get_logger().info('Mode headless (tanpa GUI).')
+            run_realtime(node)
     except KeyboardInterrupt:
-        sim_node.get_logger().info('KeyboardInterrupt: mematikan simulasi...')
+        pass
     finally:
-        sim_node.shutdown_requested = True
         executor.shutdown()
-        sim_node.destroy_node()
+        node.destroy_node()
         rclpy.try_shutdown()
 
 

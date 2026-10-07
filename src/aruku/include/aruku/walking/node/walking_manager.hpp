@@ -29,7 +29,7 @@
 #include "keisan/angle/angle.hpp"
 #include "keisan/geometry/point_2.hpp"
 #include "nlohmann/json.hpp"
-#include "tachimawari/joint/model/joint.hpp"
+#include "aruku/walking/model/joint.hpp"
 
 namespace aruku
 {
@@ -46,7 +46,6 @@ public:
 
   void update_orientation(const keisan::Angle<double> & orientation);
   void update_imu(const keisan::Angle<double> & roll, const keisan::Angle<double> & pitch);
-  void update_gyro(const keisan::Vector<3> & gyro);
   void update_actual_walk_phase(const uint8_t & current_phase);
   void update_trigger_kick(const uint8_t & leg);
   void reinit_joints();
@@ -70,11 +69,11 @@ public:
   bool is_running() const;
   bool is_kicking() const;
 
-  std::vector<tachimawari::joint::Joint> get_joints() const;
+  std::vector<Joint> get_joints() const;
   const Kinematic & get_kinematic() const;
 
   // for pid balance
-  double dt;
+  double dt = 0.008;
   double prev_pitch_error;
   double pitch_integral;
   double pid_offset_pitch;
@@ -120,15 +119,14 @@ private:
   // output member
   Kinematic kinematic;
 
-  std::vector<tachimawari::joint::Joint> joints;
-  std::array<double, 23> inital_joints;
-  std::array<double, 23> joints_direction;
+  std::vector<Joint> joints;
+  std::array<double, JointId::COUNT> inital_joints;
+  std::array<double, JointId::COUNT> joints_direction;
 
   keisan::Point2 position;
   keisan::Point2 delta_position;
 
   keisan::Angle<double> orientation;
-  keisan::Vector<3> gyro;
 };
 
 }  // namespace aruku

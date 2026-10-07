@@ -22,6 +22,5 @@
 #define ARUKU__ARUKU_HPP_
 
 #include "aruku/walking/walking.hpp"
-#include "aruku/node/aruku_node.hpp"
 
 #endif  // ARUKU__ARUKU_HPP_

@@ -20,36 +20,23 @@
 
 #include "aruku/walking/node/walking_node.hpp"
 
+#include <chrono>
 #include <memory>
-#include <string>
 
-#include "aruku/walking/node/walking_manager.hpp"
-#include "aruku/walking/process/kinematic.hpp"
-#include "kansei/measurement/measurement.hpp"
 #include "keisan/keisan.hpp"
-#include "nlohmann/json.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "tachimawari/joint/joint.hpp"
+
+using namespace std::chrono_literals;
 
 namespace aruku
 {
 
-std::string WalkingNode::get_node_prefix() { return "walking"; }
-
-std::string WalkingNode::set_walking_topic() { return get_node_prefix() + "/set_walking"; }
-
-std::string WalkingNode::status_topic() { return get_node_prefix() + "/status"; }
-
-std::string WalkingNode::set_odometry_topic() { return get_node_prefix() + "/set_odometry"; }
-
-std::string WalkingNode::delta_position_topic() { return get_node_prefix() + "/delta_position"; }
-
 WalkingNode::WalkingNode(
   rclcpp::Node::SharedPtr node, std::shared_ptr<WalkingManager> walking_manager)
-: walking_manager(walking_manager)
+: node(node), walking_manager(walking_manager)
 {
   set_walking_subscriber = node->create_subscription<SetWalking>(
-    set_walking_topic(), 10, [this](const SetWalking::SharedPtr message) {
+    "/walking/set_walking", 10, [this](const SetWalking::SharedPtr message) {
       if (message->run) {
         this->walking_manager->run(
           message->x_move, message->y_move, message->a_move, message->aim_on);
@@ -58,125 +45,61 @@ WalkingNode::WalkingNode(
       }
     });
 
-  measurement_status_subscriber = node->create_subscription<MeasurementStatus>(
-    kansei::measurement::MeasurementNode::status_topic(), 10,
-    [this](const MeasurementStatus::SharedPtr message) {
-      this->walking_manager->update_orientation(keisan::make_degree(message->orientation.yaw));
+  imu_subscriber = node->create_subscription<Imu>(
+    "/walking/imu", 10, [this](const Imu::SharedPtr message) {
+      this->walking_manager->update_orientation(keisan::make_degree(message->yaw));
       this->walking_manager->update_imu(
-        keisan::make_degree(message->orientation.roll),
-        keisan::make_degree(message->orientation.pitch));
+        keisan::make_degree(message->roll), keisan::make_degree(message->pitch));
     });
-
-
-  status_publisher = node->create_publisher<WalkingStatus>(status_topic(), 10);
-
-  unit_subscriber =
-    node->create_subscription<Unit>("/measurement/unit", 10, [this](const Unit::SharedPtr message) {
-      this->walking_manager->update_gyro(
-        keisan::Vector<3>(message->gyro.roll, message->gyro.pitch, message->gyro.yaw));
-    });
-
-  walk_phase_subscriber =
-    node->create_subscription<WalkPhase>("/walking/walk_phase", 10, [this](const WalkPhase::SharedPtr message) {
-        this->walking_manager->update_actual_walk_phase(message->current);
-      });
-
-  set_odometry_subscriber = node->create_subscription<Point2>(
-    set_odometry_topic(), 10, [this](const Point2::SharedPtr message) {
-      this->walking_manager->set_position(keisan::Point2(message->x, message->y));
-    });
-
-  walk_kick_subscriber = node->create_subscription<Int8>(
-    "/walking/walk_kick", 10, [this](const Int8::SharedPtr message) {
-      this->walking_manager->update_trigger_kick(message->data);
-    });
-
-  walk_kick_status_publisher = node->create_publisher<Bool>("/walking/walk_kick_status", 10);
-
-  delta_position_publisher = node->create_publisher<Point2>(delta_position_topic(), 10);
 
   set_joints_publisher = node->create_publisher<SetJoints>("/joint/set_joints", 10);
+  status_publisher = node->create_publisher<WalkingStatus>("/walking/status", 10);
 
   last_time = node->now();
-  node_timer = node->create_wall_timer(
-    8ms,
-    [this, node]() {
-        if(this->walking_manager->is_running()){
-          rclcpp::Time now = node->now();
-          double dt = (now - last_time).seconds();
-          last_time = now;
-
-          this->walking_manager->set_delta_time(dt);
-        }
-    }
-  );
+  timer = node->create_wall_timer(8ms, [this]() {update();});
 }
 
 void WalkingNode::update()
 {
-  if (action_manager_is_open) {
-    return;
+  rclcpp::Time now = node->now();
+  double dt = (now - last_time).seconds();
+  last_time = now;
+  if (dt > 0.0 && dt < 0.1) {
+    walking_manager->set_delta_time(dt);
   }
 
-  publish_joints();
+  // Kinematika selalu dihitung: saat diam menghasilkan pose berdiri,
+  // saat berjalan menghasilkan pola langkah.
+  if (walking_manager->process()) {
+    publish_joints();
+  }
   publish_status();
-  publish_delta_position();
-  publish_walk_kick_status();
 }
 
 void WalkingNode::publish_joints()
 {
-  auto joints_msg = SetJoints();
-
-  const auto & joints = walking_manager->get_joints();
-  auto & joint_msgs = joints_msg.joints;
-
-  joint_msgs.resize(joints.size());
-  for (size_t i = 0; i < joints.size() && i < joint_msgs.size(); ++i) {
-    joint_msgs[i].id = joints[i].get_id();
-    joint_msgs[i].position = joints[i].get_position();
+  SetJoints message;
+  for (const auto & joint : walking_manager->get_joints()) {
+    aruku_interfaces::msg::Joint joint_msg;
+    joint_msg.id = joint.get_id();
+    joint_msg.position = joint.get_position();
+    message.joints.push_back(joint_msg);
   }
-
-  joints_msg.control_type = tachimawari::joint::Middleware::FOR_WALKING;
-
-  set_joints_publisher->publish(joints_msg);
+  set_joints_publisher->publish(message);
 }
 
 void WalkingNode::publish_status()
 {
-  auto kinematic = walking_manager->get_kinematic();
-  auto status_msg = WalkingStatus();
+  const auto & kinematic = walking_manager->get_kinematic();
 
-  status_msg.is_running = walking_manager->is_running();
-
-  status_msg.x_amplitude = kinematic.get_x_move_amplitude();
-  status_msg.y_amplitude = kinematic.get_y_move_amplitude();
-  status_msg.a_amplitude = kinematic.get_a_move_amplitude();
-
-  status_msg.odometry.x = walking_manager->get_position().x;
-  status_msg.odometry.y = walking_manager->get_position().y;
-
-  status_publisher->publish(status_msg);
-}
-
-void WalkingNode::publish_delta_position()
-{
-  auto delta_position = walking_manager->get_delta_position();
-
-  auto delta_position_msg = Point2();
-  delta_position_msg.x = delta_position.x;
-  delta_position_msg.y = delta_position.y;
-
-  delta_position_publisher->publish(delta_position_msg);
-}
-
-void WalkingNode::publish_walk_kick_status()
-{
-  auto message = Bool();
-
-  message.data = walking_manager->is_kicking();
-
-  walk_kick_status_publisher->publish(message);
+  WalkingStatus message;
+  message.is_running = walking_manager->is_running();
+  message.x_amplitude = kinematic.get_x_move_amplitude();
+  message.y_amplitude = kinematic.get_y_move_amplitude();
+  message.a_amplitude = kinematic.get_a_move_amplitude();
+  message.odometry.x = walking_manager->get_position().x;
+  message.odometry.y = walking_manager->get_position().y;
+  status_publisher->publish(message);
 }
 
 }  // namespace aruku

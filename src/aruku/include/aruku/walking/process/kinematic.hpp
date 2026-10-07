@@ -27,7 +27,7 @@
 
 #include "keisan/keisan.hpp"
 #include "nlohmann/json.hpp"
-#include "tachimawari/joint/model/joint.hpp"
+#include "aruku/walking/model/joint.hpp"
 #include "aruku_interfaces/msg/walk_phase.hpp"
 
 namespace aruku

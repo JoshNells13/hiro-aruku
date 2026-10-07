@@ -3,26 +3,15 @@
 <package format="3">
   <name>op3_mujoco_sim</name>
   <version>0.1.0</version>
-  <description>Simulasi ROBOTIS OP3 Humanoid menggunakan MuJoCo pada ROS 2 Jazzy</description>
+  <description>Simulasi MuJoCo Robot Humanoid Hiro untuk Walking Engine (ROS 2 Jazzy)</description>
   <maintainer email="user@todo.todo">Joshua</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>sensor_msgs</exec_depend>
-  <exec_depend>std_msgs</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
-  <exec_depend>std_srvs</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>aruku_interfaces</exec_depend>
   <exec_depend>python3-numpy</exec_depend>
-  <exec_depend>python3-yaml</exec_depend>
-
-  <test_depend>ament_copyright</test_depend>
-  
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
-  <test_depend>python3-pytest</test_depend>
 
   <export>
     <build_type>ament_python</build_type>

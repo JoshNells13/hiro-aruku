@@ -29,11 +29,11 @@
 #include <string>
 #include <vector>
 
-#include "jitsuyo/config.hpp"
+#include "aruku/utils/config.hpp"
 #include "keisan/keisan.hpp"
 #include "nlohmann/json.hpp"
-#include "tachimawari/joint/model/joint.hpp"
-#include "tachimawari/joint/model/joint_id.hpp"
+#include "aruku/walking/model/joint.hpp"
+#include "aruku/walking/model/joint.hpp"
 
 using keisan::literals::operator""_deg;
 using keisan::literals::operator""_pi;
@@ -201,7 +201,6 @@ bool Kinematic::compute_inverse_kinematic(
   using keisan::Euler;
   using keisan::Matrix;
   using keisan::Point3;
-  using tachimawari::joint::JointId;
 
   translation_target.z -= leg_length;
   auto matrix_translation = keisan::translation_matrix(translation_target);
@@ -406,26 +405,26 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
   bool valid_config = true;
 
   nlohmann::json ratio_section;
-  if (jitsuyo::assign_val(kinematic_data, "ratio", ratio_section)) {
+  if (assign_val(kinematic_data, "ratio", ratio_section)) {
     bool valid_section = true;
-    valid_section &= jitsuyo::assign_val(ratio_section, "period_time", period_time);
-    valid_section &= jitsuyo::assign_val(ratio_section, "dsp_ratio", dsp_ratio);
-    valid_section &= jitsuyo::assign_val(ratio_section, "foot_height", z_move);
-    valid_section &= jitsuyo::assign_val(ratio_section, "swing_right_left", y_swap_amplitude);
-    valid_section &= jitsuyo::assign_val(ratio_section, "swing_up_down", z_swap_amplitude);
-    valid_section &= jitsuyo::assign_val(ratio_section, "arm_swing_gain", arm_swing_gain);
+    valid_section &= assign_val(ratio_section, "period_time", period_time);
+    valid_section &= assign_val(ratio_section, "dsp_ratio", dsp_ratio);
+    valid_section &= assign_val(ratio_section, "foot_height", z_move);
+    valid_section &= assign_val(ratio_section, "swing_right_left", y_swap_amplitude);
+    valid_section &= assign_val(ratio_section, "swing_up_down", z_swap_amplitude);
+    valid_section &= assign_val(ratio_section, "arm_swing_gain", arm_swing_gain);
     valid_section &=
-      jitsuyo::assign_val(ratio_section, "backward_hip_comp_ratio", backward_hip_comp_ratio);
+      assign_val(ratio_section, "backward_hip_comp_ratio", backward_hip_comp_ratio);
     valid_section &=
-      jitsuyo::assign_val(ratio_section, "forward_hip_comp_ratio", forward_hip_comp_ratio);
-    valid_section &= jitsuyo::assign_val(ratio_section, "foot_comp_ratio", foot_comp_ratio);
-    valid_section &= jitsuyo::assign_val(ratio_section, "dsp_comp_ratio", dsp_comp_ratio);
+      assign_val(ratio_section, "forward_hip_comp_ratio", forward_hip_comp_ratio);
+    valid_section &= assign_val(ratio_section, "foot_comp_ratio", foot_comp_ratio);
+    valid_section &= assign_val(ratio_section, "dsp_comp_ratio", dsp_comp_ratio);
     valid_section &=
-      jitsuyo::assign_val(ratio_section, "forward_period_comp_ratio", forward_period_comp_ratio);
+      assign_val(ratio_section, "forward_period_comp_ratio", forward_period_comp_ratio);
     valid_section &=
-      jitsuyo::assign_val(ratio_section, "backward_period_comp_ratio", backward_period_comp_ratio);
-    valid_section &= jitsuyo::assign_val(ratio_section, "move_accel_ratio", move_accel_ratio);
-    valid_section &= jitsuyo::assign_val(ratio_section, "foot_accel_ratio", foot_accel_ratio);
+      assign_val(ratio_section, "backward_period_comp_ratio", backward_period_comp_ratio);
+    valid_section &= assign_val(ratio_section, "move_accel_ratio", move_accel_ratio);
+    valid_section &= assign_val(ratio_section, "foot_accel_ratio", foot_accel_ratio);
 
     if (!valid_section) {
       std::cout << "Error found at section `ratio`" << std::endl;
@@ -436,12 +435,12 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
   }
 
   nlohmann::json length_section;
-  if (jitsuyo::assign_val(kinematic_data, "length", length_section)) {
+  if (assign_val(kinematic_data, "length", length_section)) {
     bool valid_section = true;
-    valid_section &= jitsuyo::assign_val(length_section, "thigh_length", thigh_length);
-    valid_section &= jitsuyo::assign_val(length_section, "calf_length", calf_length);
-    valid_section &= jitsuyo::assign_val(length_section, "ankle_length", ankle_length);
-    valid_section &= jitsuyo::assign_val(length_section, "leg_length", leg_length);
+    valid_section &= assign_val(length_section, "thigh_length", thigh_length);
+    valid_section &= assign_val(length_section, "calf_length", calf_length);
+    valid_section &= assign_val(length_section, "ankle_length", ankle_length);
+    valid_section &= assign_val(length_section, "leg_length", leg_length);
 
     if (!valid_section) {
       std::cout << "Error found at section `length`" << std::endl;
@@ -452,7 +451,7 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
   }
 
   nlohmann::json offset_section;
-  if (jitsuyo::assign_val(kinematic_data, "offset", offset_section)) {
+  if (assign_val(kinematic_data, "offset", offset_section)) {
     bool valid_section = true;
 
     double yaw_offset_double;
@@ -460,14 +459,14 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
     double pitch_offset_double;
     double hip_pitch_offset_double;
 
-    valid_section &= jitsuyo::assign_val(offset_section, "x_offset", x_offset);
-    valid_section &= jitsuyo::assign_val(offset_section, "y_offset", y_offset);
-    valid_section &= jitsuyo::assign_val(offset_section, "z_offset", z_offset);
-    valid_section &= jitsuyo::assign_val(offset_section, "yaw_offset", yaw_offset_double);
-    valid_section &= jitsuyo::assign_val(offset_section, "roll_offset", roll_offset_double);
-    valid_section &= jitsuyo::assign_val(offset_section, "pitch_offset", pitch_offset_double);
+    valid_section &= assign_val(offset_section, "x_offset", x_offset);
+    valid_section &= assign_val(offset_section, "y_offset", y_offset);
+    valid_section &= assign_val(offset_section, "z_offset", z_offset);
+    valid_section &= assign_val(offset_section, "yaw_offset", yaw_offset_double);
+    valid_section &= assign_val(offset_section, "roll_offset", roll_offset_double);
+    valid_section &= assign_val(offset_section, "pitch_offset", pitch_offset_double);
     valid_section &=
-      jitsuyo::assign_val(offset_section, "hip_pitch_offset", hip_pitch_offset_double);
+      assign_val(offset_section, "hip_pitch_offset", hip_pitch_offset_double);
 
     yaw_offset = keisan::make_degree(yaw_offset_double);
     roll_offset = keisan::make_degree(roll_offset_double);
@@ -483,13 +482,13 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
   }
 
   nlohmann::json balance_section;
-  if(jitsuyo::assign_val(kinematic_data, "balance_pause", balance_section)){
+  if(assign_val(kinematic_data, "balance_pause", balance_section)){
     bool valid_section = true;
-    valid_section &= jitsuyo::assign_val(balance_section, "enable", pause_enable);
-    valid_section &= jitsuyo::assign_val(balance_section, "roll_pause_threshold", roll_pause_threshold);
-    valid_section &= jitsuyo::assign_val(balance_section, "roll_resume_threshold", roll_resume_threshold);
-    valid_section &= jitsuyo::assign_val(balance_section, "max_pause_counter", max_pause_counter);
-    valid_section &= jitsuyo::assign_val(balance_section, "max_pause_speed", max_pause_speed);
+    valid_section &= assign_val(balance_section, "enable", pause_enable);
+    valid_section &= assign_val(balance_section, "roll_pause_threshold", roll_pause_threshold);
+    valid_section &= assign_val(balance_section, "roll_resume_threshold", roll_resume_threshold);
+    valid_section &= assign_val(balance_section, "max_pause_counter", max_pause_counter);
+    valid_section &= assign_val(balance_section, "max_pause_speed", max_pause_speed);
 
     if (!valid_section) {
       std::cout << "Error found at section `balance`" << std::endl;
@@ -500,14 +499,14 @@ void Kinematic::set_config(const nlohmann::json & kinematic_data)
   }
 
   nlohmann::json kick_section;
-  if(jitsuyo::assign_val(kinematic_data, "in_walk_kick", kick_section)){
+  if(assign_val(kinematic_data, "in_walk_kick", kick_section)){
     bool valid_section = true;
-    valid_section &= jitsuyo::assign_val(kick_section, "x_amplitude", kick_x_amplitude);
-    valid_section &= jitsuyo::assign_val(kick_section, "y_amplitude", kick_y_amplitude);
-    valid_section &= jitsuyo::assign_val(kick_section, "z_amplitude", kick_z_amplitude);
-    valid_section &= jitsuyo::assign_val(kick_section, "start_ratio", kick_start_ratio);
-    valid_section &= jitsuyo::assign_val(kick_section, "return_ratio", kick_return_ratio);
-    valid_section &= jitsuyo::assign_val(kick_section, "period_scale", kick_period_scale);
+    valid_section &= assign_val(kick_section, "x_amplitude", kick_x_amplitude);
+    valid_section &= assign_val(kick_section, "y_amplitude", kick_y_amplitude);
+    valid_section &= assign_val(kick_section, "z_amplitude", kick_z_amplitude);
+    valid_section &= assign_val(kick_section, "start_ratio", kick_start_ratio);
+    valid_section &= assign_val(kick_section, "return_ratio", kick_return_ratio);
+    valid_section &= assign_val(kick_section, "period_scale", kick_period_scale);
 
     if (!valid_section) {
       std::cout << "Error found at section `in_walk_kick`" << std::endl;
@@ -799,9 +798,9 @@ bool Kinematic::run_kinematic()
   reset_angles();
 
   if (m_x_move_amplitude != 0) {
-    angles[tachimawari::joint::JointId::RIGHT_SHOULDER_PITCH] = keisan::make_radian(
+    angles[JointId::RIGHT_SHOULDER_PITCH] = keisan::make_radian(
       wsin(m_time, m_period_time, 1.5_pi, -m_x_move_amplitude * m_arm_swing_gain, 0));
-    angles[tachimawari::joint::JointId::LEFT_SHOULDER_PITCH] = keisan::make_radian(
+    angles[JointId::LEFT_SHOULDER_PITCH] = keisan::make_radian(
       wsin(m_time, m_period_time, 1.5_pi, m_x_move_amplitude * m_arm_swing_gain, 0));
   }
 

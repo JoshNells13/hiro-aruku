@@ -22,80 +22,48 @@
 #define ARUKU__WALKING__NODE__WALKING_NODE_HPP_
 
 #include <memory>
-#include <string>
 
 #include "aruku/walking/node/walking_manager.hpp"
-#include "aruku/walking/process/kinematic.hpp"
-#include "aruku_interfaces/msg/point2.hpp"
+#include "aruku_interfaces/msg/imu.hpp"
+#include "aruku_interfaces/msg/set_joints.hpp"
 #include "aruku_interfaces/msg/set_walking.hpp"
 #include "aruku_interfaces/msg/status.hpp"
-#include "aruku_interfaces/msg/walk_phase.hpp"
 #include "rclcpp/rclcpp.hpp"
-#include "kansei_interfaces/msg/status.hpp"
-#include "kansei_interfaces/msg/unit.hpp"
-#include "tachimawari_interfaces/msg/set_joints.hpp"
-#include "std_msgs/msg/int8.hpp"
-#include "std_msgs/msg/bool.hpp"
 
 namespace aruku
 {
 
+// Jembatan ROS 2 untuk walking engine.
+//
+//   sub  /walking/set_walking  (SetWalking) : perintah jalan / berhenti
+//   sub  /walking/imu          (Imu)        : orientasi badan untuk balance PID
+//   pub  /joint/set_joints     (SetJoints)  : target sudut servo (derajat)
+//   pub  /walking/status       (Status)     : status walking + odometri
 class WalkingNode
 {
 public:
-  using Point2 = aruku_interfaces::msg::Point2;
-  using SetJoints = tachimawari_interfaces::msg::SetJoints;
+  using Imu = aruku_interfaces::msg::Imu;
+  using SetJoints = aruku_interfaces::msg::SetJoints;
   using SetWalking = aruku_interfaces::msg::SetWalking;
-  using MeasurementStatus = kansei_interfaces::msg::Status;
   using WalkingStatus = aruku_interfaces::msg::Status;
-  using Unit = kansei_interfaces::msg::Unit;
-  using WalkPhase = aruku_interfaces::msg::WalkPhase;
-  using Int8 = std_msgs::msg::Int8;
-  using Bool = std_msgs::msg::Bool;
 
-  static std::string get_node_prefix();
-  static std::string set_walking_topic();
-  static std::string status_topic();
-  static std::string set_odometry_topic();
-  static std::string delta_position_topic();
+  WalkingNode(rclcpp::Node::SharedPtr node, std::shared_ptr<WalkingManager> walking_manager);
 
-  explicit WalkingNode(
-    rclcpp::Node::SharedPtr node, std::shared_ptr<WalkingManager> walking_manager);
-
+private:
   void update();
-
-  void set_action_manager_is_open(bool is_open) { action_manager_is_open = is_open;}
-
   void publish_joints();
   void publish_status();
-  void publish_delta_position();
-  void publish_walk_kick_status();
-private:
 
   rclcpp::Node::SharedPtr node;
-
   std::shared_ptr<WalkingManager> walking_manager;
 
   rclcpp::Subscription<SetWalking>::SharedPtr set_walking_subscriber;
+  rclcpp::Subscription<Imu>::SharedPtr imu_subscriber;
   rclcpp::Publisher<SetJoints>::SharedPtr set_joints_publisher;
-
-  rclcpp::Subscription<Point2>::SharedPtr set_odometry_subscriber;
   rclcpp::Publisher<WalkingStatus>::SharedPtr status_publisher;
-  rclcpp::Publisher<Point2>::SharedPtr delta_position_publisher;
 
-  rclcpp::Subscription<MeasurementStatus>::SharedPtr measurement_status_subscriber;
-  rclcpp::Subscription<Unit>::SharedPtr unit_subscriber;
-
-  rclcpp::Subscription<WalkPhase>::SharedPtr walk_phase_subscriber;
-
-  rclcpp::Subscription<Int8>::SharedPtr walk_kick_subscriber;
-  rclcpp::Publisher<Bool>::SharedPtr walk_kick_status_publisher;
-
-  rclcpp::TimerBase::SharedPtr node_timer;
+  rclcpp::TimerBase::SharedPtr timer;
   rclcpp::Time last_time;
-  int status;
-
-  bool action_manager_is_open = false;
 };
 
 }  // namespace aruku

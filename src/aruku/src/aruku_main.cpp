@@ -18,31 +18,36 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 // THE SOFTWARE.
 
-#include <string>
+#include <iostream>
 #include <memory>
+#include <string>
 
+#include "ament_index_cpp/get_package_share_directory.hpp"
 #include "aruku/walking/node/walking_manager.hpp"
-#include "aruku/node/aruku_node.hpp"
+#include "aruku/walking/node/walking_node.hpp"
 #include "rclcpp/rclcpp.hpp"
 
+// Penggunaan: ros2 run aruku main [path_config/]
+// Jika path tidak diberikan, memakai <share>/aruku/config/
 int main(int argc, char * argv[])
 {
   rclcpp::init(argc, argv);
 
-  if (argc < 2) {
-    std::cerr << "Please specify the path!" << std::endl;
-    return 0;
+  std::string path = ament_index_cpp::get_package_share_directory("aruku") + "/config/";
+  if (argc > 1 && std::string(argv[1]).rfind("--", 0) != 0) {
+    path = argv[1];
+    if (path.back() != '/') {
+      path += "/";
+    }
   }
 
-  std::string path = argv[1];
   auto node = std::make_shared<rclcpp::Node>("aruku_node");
-  auto aruku_node = std::make_shared<aruku::ArukuNode>(node);
+  RCLCPP_INFO(node->get_logger(), "Memuat konfigurasi walking dari: %s", path.c_str());
 
   auto walking_manager = std::make_shared<aruku::WalkingManager>();
   walking_manager->load_config(path);
 
-  aruku_node->set_walking_manager(walking_manager);
-  aruku_node->run_config_service(path);
+  aruku::WalkingNode walking_node(node, walking_manager);
 
   rclcpp::spin(node);
   rclcpp::shutdown();

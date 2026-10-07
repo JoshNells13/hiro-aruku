@@ -9,16 +9,9 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>ament_index_cpp</depend>
   <depend>aruku_interfaces</depend>
-  <depend>jitsuyo</depend>
-  <depend>kansei</depend>
-  <depend>kansei_interfaces</depend>
   <depend>keisan</depend>
   <depend>nlohmann-json-dev</depend>
   <depend>rclcpp</depend>
-  <depend>competition_interfaces</depend>
-  <depend>tachimawari_interfaces</depend>
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>
