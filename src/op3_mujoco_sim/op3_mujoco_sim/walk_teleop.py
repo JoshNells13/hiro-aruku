@@ -41,6 +41,8 @@ class WalkTeleopNode(Node):
     def __init__(self):
         super().__init__('walk_teleop_node')
         self.pub = self.create_publisher(SetWalking, '/walking/set_walking', 10)
+        # Tentukan step size standar yang terbukti stabil saat mundur
+        self.default_step = 10.0  # mm
         self.get_logger().info('Node walk_teleop siap.')
 
     def send_cmd(self, run: bool, x: float = 0.0, y: float = 0.0, a: float = 0.0):
@@ -54,8 +56,22 @@ class WalkTeleopNode(Node):
         if run:
             print(f'\r>> Status: BERJALAN | Maju/Mundur: {x:+.1f} mm | Geser: {y:+.1f} mm | Putar: {a:+.1f} deg   ', end='', flush=True)
         else:
-            print('\r>> Status: BERHENTI (Robot Tegak Diam)                                                    ', end='', flush=True)
+            print('\r>> Status: BERHENTI (Robot Tegak Diam)      ', end='', flush=True)
 
+    # --- Method pembantu agar pemanggilan maju dan mundur konsisten ---
+    def move_forward(self, step_mm: float = None):
+        """Maju dengan besaran langkah yang sama seperti mundur."""
+        step = step_mm if step_mm is not None else self.default_step
+        self.send_cmd(run=True, x=abs(step))
+
+    def move_backward(self, step_mm: float = None):
+        """Mundur dengan membalik tanda step."""
+        step = step_mm if step_mm is not None else self.default_step
+        self.send_cmd(run=True, x=-abs(step))
+
+    def stop(self):
+        """Hentikan robot dan kunci posisi diam."""
+        self.send_cmd(run=False, x=0.0, y=0.0, a=0.0)
 
 def get_key(settings):
     tty.setraw(sys.stdin.fileno())
@@ -75,7 +91,7 @@ def main(args=None):
     settings = termios.tcgetattr(sys.stdin)
     print(HELP_MSG)
 
-    x_step = 15.0
+    x_step = node.default_step  # 10.0 mm (stabil untuk maju & mundur)
     y_step = 10.0
     a_step = 10.0
 
@@ -87,9 +103,9 @@ def main(args=None):
 
             k = key.lower()
             if k == 'w':
-                node.send_cmd(True, x=x_step, y=0.0, a=0.0)
+                node.move_forward(x_step)
             elif k == 's':
-                node.send_cmd(True, x=-x_step, y=0.0, a=0.0)
+                node.move_backward(x_step)
             elif k == 'a':
                 node.send_cmd(True, x=0.0, y=0.0, a=a_step)
             elif k == 'd':
@@ -99,7 +115,7 @@ def main(args=None):
             elif k == 'e':
                 node.send_cmd(True, x=0.0, y=-y_step, a=0.0)
             elif k in [' ', 'x']:
-                node.send_cmd(False, x=0.0, y=0.0, a=0.0)
+                node.stop()
             elif key == '\x03':  # Ctrl+C
                 break
 

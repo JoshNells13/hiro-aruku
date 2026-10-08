@@ -60,7 +60,12 @@ SERVO_MAP = {
 # keluaran aruku saat robot diam (config/walking.json + kinematic.json), jadi
 # robot tegak sempurna sejak awal dan tidak ada hentakan saat aruku aktif.
 STAND_POSE = {
-    1: 4.92, 2: -4.92, 3: -14.94, 4: 14.94, 5: 29.97, 6: -29.97,
+    1: 0.0,    # right_shoulder_pitch (lurus vertikal)
+    2: 0.0,    # left_shoulder_pitch  (lurus vertikal)
+    3: -75.0,  # right_shoulder_roll  (lurus ke bawah samping badan)
+    4: -75.0,  # left_shoulder_roll   (lurus ke bawah samping badan)
+    5: 0.0,    # right_elbow          (siku lurus tidak menekuk)
+    6: 0.0,    # left_elbow           (siku lurus tidak menekuk)
     7: 0.0, 8: 0.0, 9: 0.0, 10: 0.0,
     11: -8.17, 12: 8.17, 13: 17.93, 14: -17.93, 15: 9.76, 16: -9.76,
     17: 0.0, 18: 0.0, 19: 0.0, 20: 0.0,
