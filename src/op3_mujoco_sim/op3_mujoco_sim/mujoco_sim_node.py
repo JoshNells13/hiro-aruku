@@ -6,11 +6,10 @@ Alur data:
     aruku  --/joint/set_joints-->  sim (posisi servo, derajat)
     sim    --/walking/imu------->  aruku (roll/pitch/yaw badan, derajat)
 
-Saat start, robot langsung diletakkan dalam pose berdiri (lutut sedikit
-ditekuk, sama seperti pose diam aruku) dengan telapak kaki tepat di lantai,
-sehingga robot tegak sejak awal dan tidak jatuh.
+Pose berdiri awal dibaca dinamis dari key "init_angles" pada walking.json.
 """
 
+import json
 import math
 import os
 import threading
@@ -56,20 +55,52 @@ SERVO_MAP = {
     20: ('neck_pitch', 1.0),
 }
 
-# Pose berdiri awal (derajat, konvensi ID servo aruku). Nilai ini sama dengan
-# keluaran aruku saat robot diam (config/walking.json + kinematic.json), jadi
-# robot tegak sempurna sejak awal dan tidak ada hentakan saat aruku aktif.
-STAND_POSE = {
-    1: 0.0,    # right_shoulder_pitch (lurus vertikal)
-    2: 0.0,    # left_shoulder_pitch  (lurus vertikal)
-    3: -75.0,  # right_shoulder_roll  (lurus ke bawah samping badan)
-    4: -75.0,  # left_shoulder_roll   (lurus ke bawah samping badan)
-    5: 0.0,    # right_elbow          (siku lurus tidak menekuk)
-    6: 0.0,    # left_elbow           (siku lurus tidak menekuk)
+JOINT_TO_SERVO_ID = {name: sid for sid, (name, _) in SERVO_MAP.items()}
+
+DEFAULT_STAND_POSE = {
+    1: 0.0,    # right_shoulder_pitch
+    2: 0.0,    # left_shoulder_pitch
+    3: -75.0,  # right_shoulder_roll
+    4: -75.0,  # left_shoulder_roll
+    5: 0.0,    # right_elbow
+    6: 0.0,    # left_elbow
     7: 0.0, 8: 0.0, 9: 0.0, 10: 0.0,
     11: -8.17, 12: 8.17, 13: 17.93, 14: -17.93, 15: 9.76, 16: -9.76,
     17: 0.0, 18: 0.0, 19: 0.0, 20: 0.0,
 }
+
+
+def load_stand_pose_from_json(json_path: str, logger=None) -> dict:
+    """Membaca pose awal dari init_angles di walking.json."""
+    pose = DEFAULT_STAND_POSE.copy()
+    if not os.path.isfile(json_path):
+        if logger:
+            logger.warn(f'File walking config tidak ditemukan di: {json_path}. Menggunakan default pose.')
+        return pose
+
+    try:
+        with open(json_path, 'r') as f:
+            cfg = json.load(f)
+
+        init_angles = cfg.get("init_angles", {})
+
+        if init_angles:
+            for joint_name, deg_val in init_angles.items():
+                if joint_name in JOINT_TO_SERVO_ID:
+                    servo_id = JOINT_TO_SERVO_ID[joint_name]
+                    pose[servo_id] = float(deg_val)
+
+            if logger:
+                logger.info(f'Berhasil memuat pose awal dari key "init_angles" di: {json_path}')
+        else:
+            if logger:
+                logger.warn(f'Key "init_angles" tidak ditemukan pada {json_path}. Memakai default.')
+
+    except Exception as e:
+        if logger:
+            logger.error(f'Gagal mem-parsing walking.json ({e}). Menggunakan default pose.')
+
+    return pose
 
 
 class MujocoSimNode(Node):
@@ -84,11 +115,20 @@ class MujocoSimNode(Node):
             default_model = os.path.abspath(os.path.join(
                 os.path.dirname(__file__), '..', 'models', 'scene.xml'))
 
+        try:
+            default_walking_json = os.path.join(
+                get_package_share_directory('aruku'), 'config', 'walking.json')
+        except Exception:
+            default_walking_json = os.path.abspath(os.path.join(
+                os.path.dirname(__file__), '..', 'config', 'walking.json'))
+
         self.declare_parameter('model_path', default_model)
+        self.declare_parameter('walking_config_path', default_walking_json)
         self.declare_parameter('use_gui', True)
         self.declare_parameter('imu_rate', 100.0)
 
         model_path = self.get_parameter('model_path').value or default_model
+        walking_json_path = self.get_parameter('walking_config_path').value or default_walking_json
         self.use_gui = self.get_parameter('use_gui').value
         imu_rate = self.get_parameter('imu_rate').value
 
@@ -96,6 +136,9 @@ class MujocoSimNode(Node):
         self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
         self.lock = threading.Lock()
+
+        # Baca pose berdiri dari init_angles walking.json
+        self.stand_pose = load_stand_pose_from_json(walking_json_path, self.get_logger())
 
         self.torso_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_BODY, 'torso_kidsize25')
@@ -120,7 +163,7 @@ class MujocoSimNode(Node):
 
     # ------------------------------------------------------------------ setup
     def _setup_standing_pose(self):
-        """Pasang pose berdiri dan letakkan telapak kaki tepat di lantai."""
+        """Pasang pose berdiri dari JSON dan letakkan telapak kaki tepat di lantai."""
         m, d = self.model, self.data
         mujoco.mj_resetData(m, d)
 
@@ -128,8 +171,8 @@ class MujocoSimNode(Node):
         d.qpos[0:3] = [0.0, 0.0, 0.5]
         d.qpos[3:7] = [1.0, 0.0, 0.0, 0.0]
 
-        # Sendi = pose berdiri, aktuator menahan pose yang sama
-        for servo_id, deg in STAND_POSE.items():
+        # Sendi = pose berdiri dari walking.json, aktuator menahan pose yang sama
+        for servo_id, deg in self.stand_pose.items():
             if servo_id in self.servos:
                 qadr, aid, sign = self.servos[servo_id]
                 d.qpos[qadr] = math.radians(deg) * sign
@@ -208,12 +251,10 @@ def run_realtime(node, viewer=None):
             viewer.sync()
             last_sync = now
 
-        # Jika simulasi terlalu cepat dari waktu nyata, tunggu sebentar
         ahead = (node.data.time - sim_start) - (now - wall_start)
         if ahead > dt:
             time.sleep(ahead)
         elif ahead < -0.5:
-            # Tertinggal jauh (misal setelah reset): sinkronkan ulang jam
             sim_start, wall_start = node.data.time, now
 
 

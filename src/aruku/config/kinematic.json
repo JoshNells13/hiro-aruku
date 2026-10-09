@@ -1,48 +1,48 @@
 {
   "ratio": {
-    "period_time": 600.0,
-    "dsp_ratio": 0.2,
-    "foot_height": 18.0,
-    "swing_right_left": 12.0,
-    "swing_up_down": 3.0,
-    "arm_swing_gain": 0.0,
-    "backward_hip_comp_ratio": 0.0,
-    "forward_hip_comp_ratio": 0.0,
-    "foot_comp_ratio": 0.0,
-    "dsp_comp_ratio": 0.0,
-    "forward_period_comp_ratio": 0.0,
-    "backward_period_comp_ratio": 0.0,
-    "move_accel_ratio": 0.3,
-    "foot_accel_ratio": 0.3
-  },
-  "length": {
-    "thigh_length": 134.0,
-    "calf_length": 111.7,
-    "ankle_length": 34.74,
-    "leg_length": 280.44
+    "dsp_ratio": -0.07,
+    "dsp_comp_ratio": 0.15,
+    "foot_height": 22,
+    "foot_comp_ratio": 0.6,
+    "backward_hip_comp_ratio": 0.1,
+    "forward_hip_comp_ratio": 0.03,
+    "move_accel_ratio": 0.2,
+    "foot_accel_ratio": 0.12,
+    "swing_right_left": 0,
+    "swing_up_down": 0,
+    "arm_swing_gain": 0.001,
+    "period_time": 590,
+    "forward_period_comp_ratio": -2.9,
+    "backward_period_comp_ratio": -1.7
   },
   "offset": {
-    "x_offset": 0.0,
-    "y_offset": 0.0,
-    "z_offset": 0.0,
-    "yaw_offset": 0.0,
-    "roll_offset": 0.0,
-    "pitch_offset": 0.0,
-    "hip_pitch_offset": 0.0
+    "x_offset": -6,
+    "y_offset": 32,
+    "z_offset": 25,
+    "roll_offset": 0,
+    "pitch_offset": 4,
+    "yaw_offset": 0,
+    "hip_pitch_offset": 14
+  },
+  "length": {
+    "leg_length": 325,
+    "thigh_length": 138,
+    "calf_length": 138,
+    "ankle_length": 49
   },
   "balance_pause": {
     "enable": false,
-    "roll_pause_threshold": 0.0,
-    "roll_resume_threshold": 0.0,
-    "max_pause_counter": 0,
-    "max_pause_speed": 0.0
+    "roll_pause_threshold": 10,
+    "roll_resume_threshold": 4,
+    "max_pause_counter": 1000,
+    "max_pause_speed": 5
   },
   "in_walk_kick": {
-    "x_amplitude": 0.0,
-    "y_amplitude": 0.0,
-    "z_amplitude": 0.0,
-    "start_ratio": 1.0,
-    "return_ratio": 0.0,
-    "period_scale": 1.0
+    "x_amplitude": 100,
+    "y_amplitude": 20,
+    "z_amplitude": 25,
+    "start_ratio": 0.15,
+    "return_ratio": 0.6,
+    "period_scale": 0.9
   }
 }
