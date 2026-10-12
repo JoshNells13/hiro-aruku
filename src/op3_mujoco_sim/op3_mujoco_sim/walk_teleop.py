@@ -69,22 +69,22 @@ class WalkTeleopNode(Node):
         self.default_step = 10.0  # mm
 
         # Timer 10 Hz untuk terus menahan posisi tangan ke bawah
-        self.arm_timer = self.create_timer(0.1, self.publish_arms_down)
+        # self.arm_timer = self.create_timer(0.1, self.publish_arms_down)
 
-        self.get_logger().info('Node walk_teleop siap (kontrol tangan otomatis aktif).')
+        # self.get_logger().info('Node walk_teleop siap (kontrol tangan otomatis aktif).')
 
-    def publish_arms_down(self):
-        """Kirim target posisi tangan ke bawah secara berkala."""
-        msg = SetJoints()
-        joints_list = []
-        for j_id, pos in ARM_TARGET_JOINTS.items():
-            j = Joint()
-            j.id = int(j_id)
-            j.position = float(pos)
-            joints_list.append(j)
+    # def publish_arms_down(self):
+    #     """Kirim target posisi tangan ke bawah secara berkala."""
+    #     msg = SetJoints()
+    #     joints_list = []
+    #     for j_id, pos in ARM_TARGET_JOINTS.items():
+    #         j = Joint()
+    #         j.id = int(j_id)
+    #         j.position = float(pos)
+    #         joints_list.append(j)
 
-        msg.joints = joints_list
-        self.pub_joints.publish(msg)
+    #     msg.joints = joints_list
+    #     self.pub_joints.publish(msg)
 
     def send_cmd(self, run: bool, x: float = 0.0, y: float = 0.0, a: float = 0.0):
         msg = SetWalking()
