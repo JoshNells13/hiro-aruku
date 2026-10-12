@@ -45,18 +45,18 @@ def generate_launch_description():
     )
 
     # 2. Node Walking Engine (Aruku)
-    aruku_node = Node(
-        package='aruku',
-        executable='main',
-        name='aruku_node',
-        output='screen',
-        arguments=[LaunchConfiguration('config_path')],
-    )
+    # aruku_node = Node(
+    #     package='aruku',
+    #     executable='main',
+    #     name='aruku_node',
+    #     output='screen',
+    #     arguments=[LaunchConfiguration('config_path')],
+    # )
 
     return LaunchDescription([
         use_gui_arg,
         model_path_arg,
         aruku_config_arg,
         sim_node,
-        aruku_node,
+        # aruku_node,
     ])

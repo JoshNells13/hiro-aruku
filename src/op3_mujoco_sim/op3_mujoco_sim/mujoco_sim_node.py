@@ -59,12 +59,12 @@ JOINT_TO_SERVO_ID = {name: sid for sid, (name, _) in SERVO_MAP.items()}
 
 # Pose default natural: bahu turun (~45-60 deg) dan siku sedikit menekuk
 DEFAULT_STAND_POSE = {
-    1: -45.0,  # right_shoulder_pitch (turun ke bawah)
-    2: 45.0,   # left_shoulder_pitch (turun ke bawah)
-    3: 10.0,   # right_shoulder_roll (rapat ke torso)
-    4: -10.0,  # left_shoulder_roll (rapat ke torso)
-    5: -30.0,  # right_elbow (sedikit tekuk natural)
-    6: 30.0,   # left_elbow (sedikit tekuk natural)
+    1: -45.0,  # right_shoulder_pitch
+    2: 45.0,   # left_shoulder_pitch
+    3: 10.0,   # right_shoulder_roll
+    4: -10.0,  # left_shoulder_roll
+    5: -30.0,  # right_elbow
+    6: 30.0,   # left_elbow
     7: 0.0,
     8: 0.0,
     9: 0.0,
@@ -138,7 +138,7 @@ class MujocoSimNode(Node):
         self.declare_parameter('walking_config_path', default_walking_json)
         self.declare_parameter('use_gui', True)
         self.declare_parameter('imu_rate', 100.0)
-        self.declare_parameter('ignore_arm_from_aruku', True)  # Cegah aruku menimpa pose tangan jadi 0
+        self.declare_parameter('ignore_arm_from_aruku', True)
 
         model_path = self.get_parameter('model_path').value or default_model
         walking_json_path = self.get_parameter('walking_config_path').value or default_walking_json
@@ -146,18 +146,19 @@ class MujocoSimNode(Node):
         imu_rate = self.get_parameter('imu_rate').value
         self.ignore_arm_from_aruku = self.get_parameter('ignore_arm_from_aruku').value
 
+        # Deteksi status aktif aruku
+        self.last_aruku_msg_time = 0.0
+        self.aruku_timeout_sec = 0.5  # Detik toleransi sebelum aruku dinyatakan mati
+
         self.get_logger().info(f'Memuat model MuJoCo: {model_path}')
         self.model = mujoco.MjModel.from_xml_path(model_path)
         self.data = mujoco.MjData(self.model)
         self.lock = threading.Lock()
 
-        # Baca pose berdiri dari init_angles walking.json
         self.stand_pose = load_stand_pose_from_json(walking_json_path, self.get_logger())
-
         self.torso_id = mujoco.mj_name2id(
             self.model, mujoco.mjtObj.mjOBJ_BODY, 'torso_kidsize25')
 
-        # ID servo -> (index qpos, index actuator, arah)
         self.servos = {}
         for servo_id, (name, sign) in SERVO_MAP.items():
             jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
@@ -174,6 +175,11 @@ class MujocoSimNode(Node):
         self.create_timer(1.0 / imu_rate, self._publish_imu)
 
         self.get_logger().info('Simulasi siap. Robot berdiri tegak, menunggu aruku...')
+
+    @property
+    def is_aruku_alive(self) -> bool:
+        """Cek apakah aruku sedang aktif mempublikasikan joint."""
+        return (time.time() - self.last_aruku_msg_time) < self.aruku_timeout_sec
 
     def _setup_standing_pose(self):
         m, d = self.model, self.data
@@ -211,18 +217,34 @@ class MujocoSimNode(Node):
         return lowest
 
     def reset(self):
+        if self.is_aruku_alive:
+            self.get_logger().warn('Reset ditolak: matikan node aruku terlebih dahulu.')
+            return
+
         with self.lock:
             mujoco.mj_resetData(self.model, self.data)
             self.data.ctrl[:] = self.stand_ctrl
 
+    def manual_set_joint(self, servo_id: int, deg_val: float):
+        """Method untuk mengubah posisi joint secara manual (hanya jika aruku mati)."""
+        if self.is_aruku_alive:
+            self.get_logger().warn_throttle(
+                2.0, 'Kontrol manual ditolak: node aruku sedang aktif.'
+            )
+            return
+
+        with self.lock:
+            if servo_id in self.servos:
+                _, aid, sign = self.servos[servo_id]
+                self.data.ctrl[aid] = math.radians(deg_val) * sign
+
     def _on_set_joints(self, msg: SetJoints):
+        # Update heartbeat aruku
+        self.last_aruku_msg_time = time.time()
+
         with self.lock:
             for joint in msg.joints:
                 if joint.id not in self.servos:
-                    continue
-
-                # Kunci ID 1-6 (tangan) agar tidak tertimpa 0.0 oleh walking engine
-                if self.ignore_arm_from_aruku and joint.id in [1, 2, 3, 4, 5, 6]:
                     continue
 
                 _, aid, sign = self.servos[joint.id]
@@ -243,6 +265,11 @@ class MujocoSimNode(Node):
 
     def step(self):
         with self.lock:
+            # Jika aruku aktif, bersihkan gaya luar/tarikan mouse agar tidak bisa digerakkan dari GUI
+            if self.is_aruku_alive:
+                self.data.xfrc_applied[:] = 0.0
+                self.data.qfrc_applied[:] = 0.0
+
             mujoco.mj_step(self.model, self.data)
 
 
@@ -253,6 +280,33 @@ def run_realtime(node, viewer=None):
     last_sync = 0.0
 
     while rclpy.ok() and (viewer is None or viewer.is_running()):
+        # Jika aruku aktif, reset interaksi mouse/perturbasi viewer secara aman
+        if viewer is not None and node.is_aruku_alive:
+            if hasattr(viewer, '_pert'):
+                viewer._pert.active = 0
+
+        node.step()
+
+        now = time.perf_counter()
+        if viewer is not None and now - last_sync > 1.0 / 60.0:
+            viewer.sync()
+            last_sync = now
+
+        ahead = (node.data.time - sim_start) - (now - wall_start)
+        if ahead > dt:
+            time.sleep(ahead)
+        elif ahead < -0.5:
+            sim_start, wall_start = node.data.time, now
+    dt = node.model.opt.timestep
+    sim_start = node.data.time
+    wall_start = time.perf_counter()
+    last_sync = 0.0
+
+    while rclpy.ok() and (viewer is None or viewer.is_running()):
+        # Matikan perturbasi klik mouse di viewer jika aruku berjalan
+        if viewer is not None and node.is_aruku_alive:
+            viewer.pert.active = 0
+
         node.step()
 
         now = time.perf_counter()
