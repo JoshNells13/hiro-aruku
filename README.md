@@ -21,7 +21,7 @@ Arsitektur repositori ini dirancang **minimalis, terisolasi, dan berkinerja ting
    - [8.1 Cara Instalasi ROS 2 Jazzy Polosan (Ubuntu 24.04 LTS)](#81-cara-instalasi-ros-2-jazzy-polosan-ubuntu-2404-lts)
    - [8.2 Panduan Instalasi Physics Engine MuJoCo](#82-panduan-instalasi-physics-engine-mujoco)
    - [8.3 Cara Membuat Workspace ROS 2 Polosan](#83-cara-membuat-workspace-ros-2-polosan)
-   - [8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber](#84-template-folder--proyek-contoh-simple-publisher--subscriber)
+   - [8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber (C++)](#84-template-folder--proyek-contoh-simple-publisher--subscriber-c)
    - [8.5 Instalasi Dependensi & Kompilasi Proyek Ini (mujoco-op3)](#85-instalasi-dependensi--kompilasi-proyek-ini-mujoco-op3)
 9. [Panduan Menjalankan Simulasi & Kontrol](#9-panduan-menjalankan-simulasi--kontrol)
 10. [Konfigurasi Kinematika & Gait Tuning](#10-konfigurasi-kinematika--gait-tuning)
@@ -516,213 +516,41 @@ source install/setup.bash
 
 ---
 
-### 8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber
+### 8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber (C++)
 
-Pola komunikasi paling mendasar di ROS 2 adalah **Publisher-Subscriber** melalui sebuah Topic. Berikut adalah template proyek lengkap siap pakai untuk paket **Python (`ament_python`)** dan paket **C++ (`ament_cmake`)** yang saling bertukar data teks menggunakan pesan standar `std_msgs/msg/String` pada topik `/chatter`.
-
----
-
-#### A. Template Proyek Python (`ament_python`): `py_pubsub`
-
-##### 1. Pembuatan Paket
-Masuk ke direktori `src/` workspace dan buat paket dengan dependensi `rclpy` dan `std_msgs`:
-```bash
-cd ~/ros2_ws/src
-ros2 pkg create --build-type ament_python py_pubsub --dependencies rclpy std_msgs
-```
-
-##### 2. Struktur Folder Paket `py_pubsub`
-```text
-py_pubsub/
-├── package.xml                           # Metadata paket & dependensi ROS 2
-├── setup.py                              # Entry points node executables
-├── setup.cfg                             # Konfigurasi instalasi skrip
-├── resource/
-│   └── py_pubsub                         # Marker file kosong untuk ament_index
-└── py_pubsub/
-    ├── __init__.py                       # Inisialisasi modul Python
-    ├── publisher_member_function.py      # Node Publisher (Talker)
-    └── subscriber_member_function.py     # Node Subscriber (Listener)
-```
-
-##### 3. File `py_pubsub/publisher_member_function.py` (Publisher Node / Talker)
-```python
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-
-
-class MinimalPublisher(Node):
-
-    def __init__(self):
-        super().__init__('minimal_publisher')
-        self.publisher_ = self.create_publisher(String, 'chatter', 10)
-        timer_period = 0.5  # Kirim pesan setiap 0.5 detik (2 Hz)
-        self.timer = self.create_timer(timer_period, self.timer_callback)
-        self.i = 0
-
-    def timer_callback(self):
-        msg = String()
-        msg.data = f'Hello World: {self.i}'
-        self.publisher_.publish(msg)
-        self.get_logger().info(f'Publishing: "{msg.data}"')
-        self.i += 1
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    minimal_publisher = MinimalPublisher()
-    try:
-        rclpy.spin(minimal_publisher)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        minimal_publisher.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-##### 4. File `py_pubsub/subscriber_member_function.py` (Subscriber Node / Listener)
-```python
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import String
-
-
-class MinimalSubscriber(Node):
-
-    def __init__(self):
-        super().__init__('minimal_subscriber')
-        self.subscription = self.create_subscription(
-            String,
-            'chatter',
-            self.listener_callback,
-            10)
-        self.subscription  # Mencegah warning unused variable
-
-    def listener_callback(self, msg):
-        self.get_logger().info(f'I heard: "{msg.data}"')
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    minimal_subscriber = MinimalSubscriber()
-    try:
-        rclpy.spin(minimal_subscriber)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        minimal_subscriber.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
-```
-
-##### 5. File `setup.py`
-```python
-from setuptools import find_packages, setup
-
-package_name = 'py_pubsub'
-
-setup(
-    name=package_name,
-    version='0.0.1',
-    packages=find_packages(exclude=['test']),
-    data_files=[
-        ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-    ],
-    install_requires=['setuptools'],
-    zip_safe=True,
-    maintainer='User',
-    maintainer_email='user@todo.todo',
-    description='Contoh sederhana Publisher dan Subscriber ROS 2 Jazzy (Python)',
-    license='Apache-2.0',
-    tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-            'talker = py_pubsub.publisher_member_function:main',
-            'listener = py_pubsub.subscriber_member_function:main',
-        ],
-    },
-)
-```
-
-##### 6. File `setup.cfg`
-```ini
-[develop]
-script_dir=$base/lib/py_pubsub
-[install]
-install_scripts=$base/lib/py_pubsub
-```
-
-##### 7. File `package.xml`
-```xml
-<?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
-<package format="3">
-  <name>py_pubsub</name>
-  <version>0.0.1</version>
-  <description>Contoh sederhana Publisher dan Subscriber ROS 2 Jazzy (Python)</description>
-  <maintainer email="user@todo.todo">User</maintainer>
-  <license>Apache-2.0</license>
-
-  <depend>rclpy</depend>
-  <depend>std_msgs</depend>
-
-  <test_depend>ament_copyright</test_depend>
-  <test_depend>ament_flake8</test_depend>
-  <test_depend>ament_pep257</test_depend>
-  <test_depend>python3-pytest</test_depend>
-
-  <export>
-    <build_type>ament_python</build_type>
-  </export>
-</package>
-```
-
-##### 8. Kompilasi & Menjalankan Node Python
-```bash
-# Build paket py_pubsub
-cd ~/ros2_ws
-colcon build --packages-select py_pubsub
-source install/setup.bash
-
-# Terminal 1: Jalankan Publisher (Talker)
-ros2 run py_pubsub talker
-
-# Terminal 2: Jalankan Subscriber (Listener)
-source install/setup.bash
-ros2 run py_pubsub listener
-```
+Pola komunikasi paling mendasar di ROS 2 adalah **Publisher-Subscriber** melalui sebuah Topic. Di bawah ini adalah panduan lengkap pembuatan template proyek **C++ (`ament_cmake`)** bernama `cpp_pubsub` yang mengimplementasikan node *Talker* (Publisher) dan node *Listener* (Subscriber) menggunakan tipe pesan standar `std_msgs/msg/String` pada topik `/chatter`.
 
 ---
 
-#### B. Template Proyek C++ (`ament_cmake`): `cpp_pubsub`
-
-##### 1. Pembuatan Paket
+#### 1. Perintah Pembuatan Paket C++
+Buka terminal, masuk ke folder `src/` pada workspace ROS 2, lalu buat paket baru dengan dependensi `rclcpp` dan `std_msgs`:
 ```bash
 cd ~/ros2_ws/src
 ros2 pkg create --build-type ament_cmake cpp_pubsub --dependencies rclcpp std_msgs
 ```
 
-##### 2. Struktur Folder Paket `cpp_pubsub`
+---
+
+#### 2. Struktur Hierarki Folder Paket `cpp_pubsub`
+Struktur direktori paket template C++ setelah file kode sumber dan konfigurasi ditambahkan:
 ```text
 cpp_pubsub/
-├── CMakeLists.txt                        # Konfigurasi build & target CMake
-├── package.xml                           # Metadata paket & dependensi ROS 2
-└── src/
-    ├── publisher_member_function.cpp     # Node Publisher (Talker C++)
-    └── subscriber_member_function.cpp    # Node Subscriber (Listener C++)
+├── CMakeLists.txt                        # Konfigurasi build CMake & pendaftaran target executable
+├── package.xml                           # Metadata paket, lisensi, & dependensi ROS 2
+├── include/
+│   └── cpp_pubsub/                       # Direktori header C++ (.hpp / .h jika diperlukan)
+├── src/
+│   ├── publisher_member_function.cpp     # Kode sumber Node Publisher (Talker C++)
+│   └── subscriber_member_function.cpp    # Kode sumber Node Subscriber (Listener C++)
+└── launch/                               # (Opsional) File peluncur multi-node
+    └── pubsub.launch.py                  # Launch file untuk menjalankan talker & listener sekaligus
 ```
 
-##### 3. File `src/publisher_member_function.cpp` (Publisher Node / Talker)
+---
+
+#### 3. Kode Sumber Publisher Node: `src/publisher_member_function.cpp`
+Node ini bertugas mempublikasikan string pesan `"Hello, world! <nomor>"` ke topik `/chatter` secara berkala (setiap 500 ms / 2 Hz):
+
 ```cpp
 #include <chrono>
 #include <memory>
@@ -733,14 +561,21 @@ cpp_pubsub/
 
 using namespace std::chrono_literals;
 
+/* Node Publisher turunan dari rclcpp::Node */
 class MinimalPublisher : public rclcpp::Node
 {
 public:
-  MinimalPublisher() : Node("minimal_publisher"), count_(0)
+  MinimalPublisher()
+  : Node("minimal_publisher"), count_(0)
   {
+    // Membuat publisher pada topik "chatter" dengan antrean (QoS history depth) 10
     publisher_ = this->create_publisher<std_msgs::msg::String>("chatter", 10);
+
+    // Timer memicu pengiriman pesan setiap 500 ms (2 Hz)
     timer_ = this->create_wall_timer(
       500ms, std::bind(&MinimalPublisher::timer_callback, this));
+
+    RCLCPP_INFO(this->get_logger(), "Node Publisher C++ telah aktif!");
   }
 
 private:
@@ -766,21 +601,30 @@ int main(int argc, char * argv[])
 }
 ```
 
-##### 4. File `src/subscriber_member_function.cpp` (Subscriber Node / Listener)
+---
+
+#### 4. Kode Sumber Subscriber Node: `src/subscriber_member_function.cpp`
+Node ini berlangganan (*subscribe*) ke topik `/chatter` dan menampilkan pesan yang diterima di terminal:
+
 ```cpp
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
 #include "std_msgs/msg/string.hpp"
 
+/* Node Subscriber turunan dari rclcpp::Node */
 class MinimalSubscriber : public rclcpp::Node
 {
 public:
-  MinimalSubscriber() : Node("minimal_subscriber")
+  MinimalSubscriber()
+  : Node("minimal_subscriber")
   {
+    // Berlangganan topik "chatter" dengan callback topic_callback
     subscription_ = this->create_subscription<std_msgs::msg::String>(
       "chatter", 10,
       std::bind(&MinimalSubscriber::topic_callback, this, std::placeholders::_1));
+
+    RCLCPP_INFO(this->get_logger(), "Node Subscriber C++ telah aktif dan menunggu data...");
   }
 
 private:
@@ -801,7 +645,11 @@ int main(int argc, char * argv[])
 }
 ```
 
-##### 5. File `CMakeLists.txt`
+---
+
+#### 5. Konfigurasi `CMakeLists.txt`
+Konfigurasikan file `CMakeLists.txt` untuk mengompilasi kedua file sumber menjadi executable `talker` dan `listener`:
+
 ```cmake
 cmake_minimum_required(VERSION 3.8)
 project(cpp_pubsub)
@@ -810,6 +658,7 @@ if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
 
+# Temukan paket dependensi ROS 2
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
@@ -829,10 +678,21 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Pemasangan folder launch (opsional jika menyediakan launch file)
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
+  install(DIRECTORY launch
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
 ament_package()
 ```
 
-##### 6. File `package.xml`
+---
+
+#### 6. Konfigurasi `package.xml`
+Pastikan deklarasi dependensi `rclcpp` dan `std_msgs` sudah tercantum:
+
 ```xml
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
@@ -856,20 +716,60 @@ ament_package()
 </package>
 ```
 
-##### 7. Kompilasi & Menjalankan Node C++
-```bash
-# Build paket cpp_pubsub
-cd ~/ros2_ws
-colcon build --packages-select cpp_pubsub
-source install/setup.bash
+---
 
-# Terminal 1: Jalankan Talker
-ros2 run cpp_pubsub talker
+#### 7. File Launch Bersama (Opsional): `launch/pubsub.launch.py`
+Untuk menyalakan node publisher dan subscriber sekaligus dengan satu perintah:
 
-# Terminal 2: Jalankan Listener
-source install/setup.bash
-ros2 run cpp_pubsub listener
+```python
+from launch import LaunchDescription
+from launch_ros.actions import Node
+
+
+def generate_launch_description():
+    return LaunchDescription([
+        Node(
+            package='cpp_pubsub',
+            executable='talker',
+            name='talker',
+            output='screen',
+        ),
+        Node(
+            package='cpp_pubsub',
+            executable='listener',
+            name='listener',
+            output='screen',
+        ),
+    ])
 ```
+
+---
+
+#### 8. Kompilasi & Menjalankan Node C++
+
+1. **Build Workspace**:
+   ```bash
+   cd ~/ros2_ws
+   colcon build --packages-select cpp_pubsub
+   ```
+
+2. **Opsi A: Jalankan Menggunakan Dua Terminal Terpisah**:
+   - **Terminal 1 (Publisher / Talker)**:
+     ```bash
+     source install/setup.bash
+     ros2 run cpp_pubsub talker
+     ```
+   - **Terminal 2 (Subscriber / Listener)**:
+     ```bash
+     source install/setup.bash
+     ros2 run cpp_pubsub listener
+     ```
+
+3. **Opsi B: Jalankan Sekaligus Menggunakan Launch File**:
+   ```bash
+   source install/setup.bash
+   ros2 launch cpp_pubsub pubsub.launch.py
+   ```
 
 ---
 
