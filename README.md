@@ -18,6 +18,10 @@ Arsitektur repositori ini dirancang **minimalis, terisolasi, dan berkinerja ting
 6. [Contoh Konkret Pemetaan Komunikasi (Pub-Sub & Payload)](#6-contoh-konkret-pemetaan-komunikasi-pub-sub--payload)
 7. [Struktur Paket Workspace](#7-struktur-paket-workspace)
 8. [Panduan Instalasi & Kompilasi](#8-panduan-instalasi--kompilasi)
+   - [8.1 Cara Instalasi ROS 2 Jazzy Polosan (Ubuntu 24.04 LTS)](#81-cara-instalasi-ros-2-jazzy-polosan-ubuntu-2404-lts)
+   - [8.2 Cara Membuat Workspace & Proyek ROS 2 Jazzy Polosan](#82-cara-membuat-workspace--proyek-ros-2-jazzy-polosan)
+   - [8.3 Template Struktur Folder Proyek ROS 2 Jazzy](#83-template-struktur-folder-proyek-ros-2-jazzy)
+   - [8.4 Instalasi Dependensi & Kompilasi Proyek Ini (mujoco-op3)](#84-instalasi-dependensi--kompilasi-proyek-ini-mujoco-op3)
 9. [Panduan Menjalankan Simulasi & Kontrol](#9-panduan-menjalankan-simulasi--kontrol)
 10. [Konfigurasi Kinematika & Gait Tuning](#10-konfigurasi-kinematika--gait-tuning)
 11. [Debugging & Inspeksi Sistem](#11-debugging--inspeksi-sistem)
@@ -386,26 +390,448 @@ mujoco-op3/
 
 ## 8. Panduan Instalasi & Kompilasi
 
-### Prasyarat Sistem
-1. **Sistem Operasi**: Linux Ubuntu 24.04 LTS (Noble Numbat).
-2. **ROS 2**: Versi **Jazzy Jalisco**.
-3. **Python & MuJoCo**:
-   ```bash
-   pip3 install mujoco numpy
-   ```
+### 8.1 Cara Instalasi ROS 2 Jazzy Polosan (Ubuntu 24.04 LTS)
 
-### Langkah Kompilasi (Build)
+Jika sistem Ubuntu 24.04 LTS Anda belum terpasang ROS 2 Jazzy, berikut adalah langkah instalasi resmi ROS 2 Jazzy Jalisco dari repositori Debian resmi (*fresh install*):
+
+#### 1. Pengaturan Locale Sistem
+Pastikan sistem Anda menggunakan locale dengan dukungan UTF-8:
+```bash
+sudo apt update && sudo apt install locales -y
+sudo locale-gen en_US en_US.UTF-8
+sudo update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8
+export LANG=en_US.UTF-8
+```
+
+#### 2. Konfigurasi Repositori & Kunci GPG
+Aktifkan repositori Universe Ubuntu, lalu tambahkan GPG key resmi ROS 2:
+```bash
+# Aktifkan repositori Universe Ubuntu
+sudo apt install software-properties-common curl -y
+sudo add-apt-repository universe -y
+
+# Tambahkan GPG key resmi ROS 2
+sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+
+# Daftarkan repositori ROS 2 ke APT sources list
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo $UBUNTU_CODENAME) main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+```
+
+#### 3. Instalasi Paket ROS 2 Jazzy
+Perbarui indeks paket APT dan instal paket yang diinginkan:
+```bash
+sudo apt update
+
+# Rekomendasi: Desktop Install (ROS 2, RViz, demo, dan tutorial)
+sudo apt install -y ros-jazzy-desktop
+
+# Opsi Minimalis / Base (Khusus server / komputer robot tanpa GUI):
+# sudo apt install -y ros-jazzy-ros-base
+```
+
+#### 4. Instalasi Alat Pengembangan (Colcon, Rosdep & Build Tools)
+```bash
+sudo apt install -y python3-colcon-common-extensions python3-rosdep build-essential git
+```
+
+#### 5. Inisialisasi Rosdep
+```bash
+sudo rosdep init
+rosdep update
+```
+
+#### 6. Sourcing Environment ROS 2
+```bash
+source /opt/ros/jazzy/setup.bash
+
+# (Opsional) Tambahkan ke ~/.bashrc agar otomatis aktif pada terminal baru:
+echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
+```
+
+---
+
+### 8.2 Cara Membuat Workspace & Proyek ROS 2 Jazzy Polosan
+
+Berikut adalah alur standar membuat workspace ROS 2 dan paket kosong (*polosan*) dari awal (*scratch*):
+
+#### 1. Membuat Folder Workspace Polosan
+```bash
+# 1. Buat folder workspace dan sub-folder src
+mkdir -p ~/ros2_ws/src
+cd ~/ros2_ws
+
+# 2. Build awal untuk membentuk direktori build, install, dan log
+colcon build
+
+# 3. Source hasil build workspace lokal
+source install/setup.bash
+```
+
+#### 2. Membuat Paket Baru Menggunakan `ros2 pkg create`
+Masuk ke direktori `src/` sebelum membuat paket:
+
+- **A. Membuat Paket C++ (`ament_cmake`) Polosan**:
+  ```bash
+  cd ~/ros2_ws/src
+  ros2 pkg create --build-type ament_cmake my_cpp_pkg --dependencies rclcpp
+  ```
+
+- **B. Membuat Paket Python (`ament_python`) Polosan**:
+  ```bash
+  cd ~/ros2_ws/src
+  ros2 pkg create --build-type ament_python my_py_pkg --dependencies rclpy
+  ```
+
+- **C. Membuat Paket Interface Kustom (`msg`/`srv`/`action`)**:
+  ```bash
+  cd ~/ros2_ws/src
+  ros2 pkg create --build-type ament_cmake my_interfaces --dependencies rosidl_default_generators
+  ```
+
+---
+
+### 8.3 Template Struktur Folder Proyek ROS 2 Jazzy
+
+Di bawah ini adalah referensi struktur direktori standar beserta template kode minimal siap pakai untuk proyek ROS 2 Jazzy:
+
+#### 1. Struktur Hierarki Workspace Standar
+```text
+ros2_ws/                        # Direktori root workspace
+├── src/                        # [DIBUAT MANUAL] Tempat seluruh kode sumber dan paket ROS 2
+│   ├── my_cpp_pkg/             # Template paket C++
+│   ├── my_py_pkg/              # Template paket Python
+│   └── my_interfaces/          # Template paket custom interface (msg/srv/action)
+├── build/                      # [DIHASILKAN COLCON] File objek dan cache kompilasi
+├── install/                    # [DIHASILKAN COLCON] Biner executable, library, dan file setup.bash
+│   ├── setup.bash              # Skrip sourcing seluruh environment workspace
+│   └── local_setup.bash        # Skrip sourcing paket spesifik workspace ini
+└── log/                        # [DIHASILKAN COLCON] Riwayat catatan log dari colcon
+```
+
+---
+
+#### 2. Template Folder & File Paket C++ (`ament_cmake`)
+
+Struktur folder paket C++:
+```text
+my_cpp_pkg/
+├── CMakeLists.txt              # Konfigurasi build CMake & pendaftaran executable
+├── package.xml                 # Metadata paket, dependensi, lisensi, dan author
+├── include/
+│   └── my_cpp_pkg/             # Header file C++ (.hpp / .h)
+│       └── sample_node.hpp
+├── src/                        # Implementasi kode C++ (.cpp)
+│   └── sample_node.cpp
+└── launch/                     # (Opsional) File peluncur multi-node
+    └── sample.launch.py
+```
+
+##### Template Minimal `package.xml` (C++):
+```xml
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_cpp_pkg</name>
+  <version>0.0.1</version>
+  <description>Template paket C++ ROS 2 Jazzy</description>
+  <maintainer email="user@todo.todo">User</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <depend>rclcpp</depend>
+
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+```
+
+##### Template Minimal `CMakeLists.txt` (C++):
+```cmake
+cmake_minimum_required(VERSION 3.8)
+project(my_cpp_pkg)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+find_package(ament_cmake REQUIRED)
+find_package(rclcpp REQUIRED)
+
+# Deklarasi executable node
+add_executable(sample_node src/sample_node.cpp)
+target_include_directories(sample_node PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>)
+ament_target_dependencies(sample_node rclcpp)
+
+# Instalasi target executable ke direktori lib paket
+install(TARGETS
+  sample_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Instalasi header file (jika paket menyediakan library C++)
+install(DIRECTORY include/
+  DESTINATION include/
+)
+
+# Instalasi folder launch jika tersedia
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
+  install(DIRECTORY launch
+    DESTINATION share/${PROJECT_NAME}
+  )
+endif()
+
+ament_package()
+```
+
+##### Template Kode Node C++ Polosan (`src/sample_node.cpp`):
+```cpp
+#include <chrono>
+#include <memory>
+#include "rclcpp/rclcpp.hpp"
+
+using namespace std::chrono_literals;
+
+class SampleNode : public rclcpp::Node
+{
+public:
+  SampleNode() : Node("sample_node")
+  {
+    RCLCPP_INFO(this->get_logger(), "Sample Node C++ aktif!");
+    timer_ = this->create_wall_timer(
+      1000ms, std::bind(&SampleNode::timer_callback, this));
+  }
+
+private:
+  void timer_callback()
+  {
+    RCLCPP_INFO(this->get_logger(), "Hello dari ROS 2 Jazzy C++!");
+  }
+
+  rclcpp::TimerBase::SharedPtr timer_;
+};
+
+int main(int argc, char **argv)
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<SampleNode>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+---
+
+#### 3. Template Folder & File Paket Python (`ament_python`)
+
+Struktur folder paket Python:
+```text
+my_py_pkg/
+├── package.xml                 # Metadata paket dan dependensi ROS 2
+├── setup.py                    # Script packaging setuptools & deklarasi entry points
+├── setup.cfg                   # Konfigurasi direktori script eksekusi
+├── resource/
+│   └── my_py_pkg               # File marker kosong (wajib untuk ament_index)
+├── my_py_pkg/                  # Modul Python utama (nama folder sama dengan nama paket)
+│   ├── __init__.py             # Inisialisasi modul package
+│   └── sample_node.py          # Kode node ROS 2 Python
+└── launch/                     # (Opsional) File peluncur multi-node
+    └── sample.launch.py
+```
+
+##### Template Minimal `package.xml` (Python):
+```xml
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_py_pkg</name>
+  <version>0.0.1</version>
+  <description>Template paket Python ROS 2 Jazzy</description>
+  <maintainer email="user@todo.todo">User</maintainer>
+  <license>Apache-2.0</license>
+
+  <depend>rclpy</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>
+```
+
+##### Template Minimal `setup.py` (Python):
+```python
+import os
+from glob import glob
+from setuptools import find_packages, setup
+
+package_name = 'my_py_pkg'
+
+setup(
+    name=package_name,
+    version='0.0.1',
+    packages=find_packages(exclude=['test']),
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+        # Daftarkan direktori launch jika tersedia:
+        # (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='User',
+    maintainer_email='user@todo.todo',
+    description='Template paket Python ROS 2 Jazzy',
+    license='Apache-2.0',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'sample_node = my_py_pkg.sample_node:main',
+        ],
+    },
+)
+```
+
+##### Template Minimal `setup.cfg` (Python):
+```ini
+[develop]
+script_dir=$base/lib/my_py_pkg
+[install]
+install_scripts=$base/lib/my_py_pkg
+```
+
+##### Template Kode Node Python Polosan (`my_py_pkg/sample_node.py`):
+```python
+import rclpy
+from rclpy.node import Node
+
+
+class SampleNode(Node):
+
+    def __init__(self):
+        super().__init__('sample_node')
+        self.get_logger().info('Sample Node Python aktif!')
+        self.timer = self.create_timer(1.0, self.timer_callback)
+
+    def timer_callback(self):
+        self.get_logger().info('Hello dari ROS 2 Jazzy Python!')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = SampleNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+---
+
+#### 4. Template Folder & File Paket Interface Kustom (`ament_cmake`)
+
+Struktur folder paket interface (seperti halnya paket `aruku_interfaces` pada repositori ini):
+```text
+my_interfaces/
+├── CMakeLists.txt              # Menjalankan rosidl_generate_interfaces
+├── package.xml                 # Bergantung pada rosidl_default_generators & rosidl_default_runtime
+├── msg/                        # Definisi pesan kustom (.msg)
+│   └── SampleData.msg
+├── srv/                        # Definisi layanan kustom (.srv)
+│   └── TriggerCmd.srv
+└── action/                     # Definisi aksi kustom (.action)
+    └── MoveGoal.action
+```
+
+##### Template `CMakeLists.txt` untuk Interface:
+```cmake
+cmake_minimum_required(VERSION 3.8)
+project(my_interfaces)
+
+find_package(ament_cmake REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
+
+# Daftarkan semua file msg, srv, dan action:
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/SampleData.msg"
+  # "srv/TriggerCmd.srv"
+  # "action/MoveGoal.action"
+)
+
+ament_package()
+```
+
+##### Template `package.xml` untuk Interface:
+```xml
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>my_interfaces</name>
+  <version>0.0.1</version>
+  <description>Definisi interface kustom ROS 2 Jazzy</description>
+  <maintainer email="user@todo.todo">User</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+
+  <exec_depend>rosidl_default_runtime</exec_depend>
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
+```
+
+---
+
+### 8.4 Instalasi Dependensi & Kompilasi Proyek Ini (`mujoco-op3`)
+
+Setelah lingkungan ROS 2 Jazzy siap, ikuti langkah berikut untuk menginstal dependensi khusus dan mengompilasi workspace **mujoco-op3**:
+
+#### 1. Prasyarat Dependensi Python MuJoCo
+Instalasi engine fisika MuJoCo dan modul numerik Python:
+```bash
+pip3 install mujoco numpy
+```
+
+#### 2. Resolusi Otomatis Dependensi ROS 2 (Opsional via rosdep)
+```bash
+cd ~/Documents/projek/mujoco-op3
+rosdep install -i --from-path src --rosdistro jazzy -y
+```
+
+#### 3. Langkah Kompilasi (Build Workspace)
 Buka terminal di root workspace, lakukan sourcing ROS 2 Jazzy, lalu build workspace:
 
 ```bash
-cd ~/Documents/Projek\ ROS\ 2/mujoco-op3
+cd ~/Documents/projek/mujoco-op3
 source /opt/ros/jazzy/setup.bash
 
-# Build seluruh paket dengan symlink
+# Build seluruh paket dengan symlink-install
 colcon build --symlink-install
 ```
 
-Setelah build berhasil, lakukan sourcing direktori `install`:
+#### 4. Sourcing Lingkungan Kerja Lokal
+Setelah build selesai dengan sukses, lakukan sourcing direktori `install`:
 ```bash
 source install/setup.bash
 ```
