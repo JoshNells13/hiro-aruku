@@ -19,9 +19,10 @@ Arsitektur repositori ini dirancang **minimalis, terisolasi, dan berkinerja ting
 7. [Struktur Paket Workspace](#7-struktur-paket-workspace)
 8. [Panduan Instalasi & Kompilasi](#8-panduan-instalasi--kompilasi)
    - [8.1 Cara Instalasi ROS 2 Jazzy Polosan (Ubuntu 24.04 LTS)](#81-cara-instalasi-ros-2-jazzy-polosan-ubuntu-2404-lts)
-   - [8.2 Cara Membuat Workspace & Proyek ROS 2 Jazzy Polosan](#82-cara-membuat-workspace--proyek-ros-2-jazzy-polosan)
-   - [8.3 Template Struktur Folder Proyek ROS 2 Jazzy](#83-template-struktur-folder-proyek-ros-2-jazzy)
-   - [8.4 Instalasi Dependensi & Kompilasi Proyek Ini (mujoco-op3)](#84-instalasi-dependensi--kompilasi-proyek-ini-mujoco-op3)
+   - [8.2 Panduan Instalasi Physics Engine MuJoCo](#82-panduan-instalasi-physics-engine-mujoco)
+   - [8.3 Cara Membuat Workspace ROS 2 Polosan](#83-cara-membuat-workspace-ros-2-polosan)
+   - [8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber](#84-template-folder--proyek-contoh-simple-publisher--subscriber)
+   - [8.5 Instalasi Dependensi & Kompilasi Proyek Ini (mujoco-op3)](#85-instalasi-dependensi--kompilasi-proyek-ini-mujoco-op3)
 9. [Panduan Menjalankan Simulasi & Kontrol](#9-panduan-menjalankan-simulasi--kontrol)
 10. [Konfigurasi Kinematika & Gait Tuning](#10-konfigurasi-kinematika--gait-tuning)
 11. [Debugging & Inspeksi Sistem](#11-debugging--inspeksi-sistem)
@@ -450,212 +451,230 @@ echo "source /opt/ros/jazzy/setup.bash" >> ~/.bashrc
 
 ---
 
-### 8.2 Cara Membuat Workspace & Proyek ROS 2 Jazzy Polosan
+### 8.2 Panduan Instalasi Physics Engine MuJoCo
 
-Berikut adalah alur standar membuat workspace ROS 2 dan paket kosong (*polosan*) dari awal (*scratch*):
+MuJoCo (*Multi-Joint dynamics with Contact*) adalah physics engine berkinerja tinggi yang digunakan untuk simulasi fisika robot humanoid ini. Untuk memasang dan mengonfigurasinya pada Ubuntu 24.04 LTS:
 
-#### 1. Membuat Folder Workspace Polosan
+#### 1. Instalasi Pustaka Dependensi Grafis & OpenGL
+MuJoCo viewer memerlukan pustaka OpenGL dan GLFW untuk me-render simulasi 3D di layar:
 ```bash
-# 1. Buat folder workspace dan sub-folder src
+sudo apt update && sudo apt install -y \
+  libgl1-mesa-dev \
+  libgl1-mesa-glx \
+  libglew-dev \
+  libglfw3-dev
+```
+
+#### 2. Instalasi Paket Python MuJoCo & NumPy
+Instal modul Python resmi `mujoco` dan `numpy`:
+```bash
+pip3 install mujoco numpy --break-system-packages
+```
+> [!NOTE]
+> Pada Ubuntu 24.04 LTS (Noble Numbat), standar PEP 668 diterapkan secara default untuk menjaga integritas file sistem. Opsi `--break-system-packages` memungkinkan instalasi pip lokal pengguna tanpa merusak paket APT sistem jika Anda tidak menggunakan virtual environment Python (venv).
+
+#### 3. Verifikasi Instalasi MuJoCo
+Pastikan modul `mujoco` berhasil diimpor dan periksa versinya:
+```bash
+python3 -c "import mujoco; print('MuJoCo version:', mujoco.__version__)"
+```
+
+#### 4. Uji Visualizer 3D MuJoCo
+Jalankan viewer interaktif bawaan MuJoCo untuk memastikan driver GPU dan display server (X11 / Wayland) bekerja normal:
+```bash
+python3 -m mujoco.viewer
+```
+*(Jendela viewer 3D interaktif MuJoCo akan muncul. Tekan `ESC` untuk keluar)*.
+
+---
+
+### 8.3 Cara Membuat Workspace ROS 2 Polosan
+
+Hierarki workspace ROS 2 standar terdiri dari 4 direktori utama:
+```text
+ros2_ws/                        # Direktori root workspace
+├── src/                        # [DIKERJAKAN MANUAL] Tempat seluruh kode sumber dan paket ROS 2
+├── build/                      # [DIHASILKAN COLCON] Cache dan file objek kompilasi
+├── install/                    # [DIHASILKAN COLCON] Output biner executable dan skrip environment
+│   ├── setup.bash              # Skrip sourcing seluruh environment workspace
+│   └── local_setup.bash        # Skrip sourcing khusus paket dalam workspace ini
+└── log/                        # [DIHASILKAN COLCON] Catatan riwayat log proses build
+```
+
+Langkah membuat workspace kosong dari awal:
+```bash
+# 1. Buat direktori workspace dan sub-folder src
 mkdir -p ~/ros2_ws/src
 cd ~/ros2_ws
 
-# 2. Build awal untuk membentuk direktori build, install, dan log
+# 2. Build awal untuk membentuk struktur direktori build, install, dan log
 colcon build
 
 # 3. Source hasil build workspace lokal
 source install/setup.bash
 ```
 
-#### 2. Membuat Paket Baru Menggunakan `ros2 pkg create`
-Masuk ke direktori `src/` sebelum membuat paket:
+---
 
-- **A. Membuat Paket C++ (`ament_cmake`) Polosan**:
-  ```bash
-  cd ~/ros2_ws/src
-  ros2 pkg create --build-type ament_cmake my_cpp_pkg --dependencies rclcpp
-  ```
+### 8.4 Template Folder & Proyek Contoh: Simple Publisher & Subscriber
 
-- **B. Membuat Paket Python (`ament_python`) Polosan**:
-  ```bash
-  cd ~/ros2_ws/src
-  ros2 pkg create --build-type ament_python my_py_pkg --dependencies rclpy
-  ```
-
-- **C. Membuat Paket Interface Kustom (`msg`/`srv`/`action`)**:
-  ```bash
-  cd ~/ros2_ws/src
-  ros2 pkg create --build-type ament_cmake my_interfaces --dependencies rosidl_default_generators
-  ```
+Pola komunikasi paling mendasar di ROS 2 adalah **Publisher-Subscriber** melalui sebuah Topic. Berikut adalah template proyek lengkap siap pakai untuk paket **Python (`ament_python`)** dan paket **C++ (`ament_cmake`)** yang saling bertukar data teks menggunakan pesan standar `std_msgs/msg/String` pada topik `/chatter`.
 
 ---
 
-### 8.3 Template Struktur Folder Proyek ROS 2 Jazzy
+#### A. Template Proyek Python (`ament_python`): `py_pubsub`
 
-Di bawah ini adalah referensi struktur direktori standar beserta template kode minimal siap pakai untuk proyek ROS 2 Jazzy:
+##### 1. Pembuatan Paket
+Masuk ke direktori `src/` workspace dan buat paket dengan dependensi `rclpy` dan `std_msgs`:
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_python py_pubsub --dependencies rclpy std_msgs
+```
 
-#### 1. Struktur Hierarki Workspace Standar
+##### 2. Struktur Folder Paket `py_pubsub`
 ```text
-ros2_ws/                        # Direktori root workspace
-├── src/                        # [DIBUAT MANUAL] Tempat seluruh kode sumber dan paket ROS 2
-│   ├── my_cpp_pkg/             # Template paket C++
-│   ├── my_py_pkg/              # Template paket Python
-│   └── my_interfaces/          # Template paket custom interface (msg/srv/action)
-├── build/                      # [DIHASILKAN COLCON] File objek dan cache kompilasi
-├── install/                    # [DIHASILKAN COLCON] Biner executable, library, dan file setup.bash
-│   ├── setup.bash              # Skrip sourcing seluruh environment workspace
-│   └── local_setup.bash        # Skrip sourcing paket spesifik workspace ini
-└── log/                        # [DIHASILKAN COLCON] Riwayat catatan log dari colcon
-```
-
----
-
-#### 2. Template Folder & File Paket C++ (`ament_cmake`)
-
-Struktur folder paket C++:
-```text
-my_cpp_pkg/
-├── CMakeLists.txt              # Konfigurasi build CMake & pendaftaran executable
-├── package.xml                 # Metadata paket, dependensi, lisensi, dan author
-├── include/
-│   └── my_cpp_pkg/             # Header file C++ (.hpp / .h)
-│       └── sample_node.hpp
-├── src/                        # Implementasi kode C++ (.cpp)
-│   └── sample_node.cpp
-└── launch/                     # (Opsional) File peluncur multi-node
-    └── sample.launch.py
-```
-
-##### Template Minimal `package.xml` (C++):
-```xml
-<?xml version="1.0"?>
-<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
-<package format="3">
-  <name>my_cpp_pkg</name>
-  <version>0.0.1</version>
-  <description>Template paket C++ ROS 2 Jazzy</description>
-  <maintainer email="user@todo.todo">User</maintainer>
-  <license>Apache-2.0</license>
-
-  <buildtool_depend>ament_cmake</buildtool_depend>
-  <depend>rclcpp</depend>
-
-  <test_depend>ament_lint_auto</test_depend>
-  <test_depend>ament_lint_common</test_depend>
-
-  <export>
-    <build_type>ament_cmake</build_type>
-  </export>
-</package>
-```
-
-##### Template Minimal `CMakeLists.txt` (C++):
-```cmake
-cmake_minimum_required(VERSION 3.8)
-project(my_cpp_pkg)
-
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
-
-find_package(ament_cmake REQUIRED)
-find_package(rclcpp REQUIRED)
-
-# Deklarasi executable node
-add_executable(sample_node src/sample_node.cpp)
-target_include_directories(sample_node PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>)
-ament_target_dependencies(sample_node rclcpp)
-
-# Instalasi target executable ke direktori lib paket
-install(TARGETS
-  sample_node
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Instalasi header file (jika paket menyediakan library C++)
-install(DIRECTORY include/
-  DESTINATION include/
-)
-
-# Instalasi folder launch jika tersedia
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/launch")
-  install(DIRECTORY launch
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
-
-ament_package()
-```
-
-##### Template Kode Node C++ Polosan (`src/sample_node.cpp`):
-```cpp
-#include <chrono>
-#include <memory>
-#include "rclcpp/rclcpp.hpp"
-
-using namespace std::chrono_literals;
-
-class SampleNode : public rclcpp::Node
-{
-public:
-  SampleNode() : Node("sample_node")
-  {
-    RCLCPP_INFO(this->get_logger(), "Sample Node C++ aktif!");
-    timer_ = this->create_wall_timer(
-      1000ms, std::bind(&SampleNode::timer_callback, this));
-  }
-
-private:
-  void timer_callback()
-  {
-    RCLCPP_INFO(this->get_logger(), "Hello dari ROS 2 Jazzy C++!");
-  }
-
-  rclcpp::TimerBase::SharedPtr timer_;
-};
-
-int main(int argc, char **argv)
-{
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<SampleNode>());
-  rclcpp::shutdown();
-  return 0;
-}
-```
-
----
-
-#### 3. Template Folder & File Paket Python (`ament_python`)
-
-Struktur folder paket Python:
-```text
-my_py_pkg/
-├── package.xml                 # Metadata paket dan dependensi ROS 2
-├── setup.py                    # Script packaging setuptools & deklarasi entry points
-├── setup.cfg                   # Konfigurasi direktori script eksekusi
+py_pubsub/
+├── package.xml                           # Metadata paket & dependensi ROS 2
+├── setup.py                              # Entry points node executables
+├── setup.cfg                             # Konfigurasi instalasi skrip
 ├── resource/
-│   └── my_py_pkg               # File marker kosong (wajib untuk ament_index)
-├── my_py_pkg/                  # Modul Python utama (nama folder sama dengan nama paket)
-│   ├── __init__.py             # Inisialisasi modul package
-│   └── sample_node.py          # Kode node ROS 2 Python
-└── launch/                     # (Opsional) File peluncur multi-node
-    └── sample.launch.py
+│   └── py_pubsub                         # Marker file kosong untuk ament_index
+└── py_pubsub/
+    ├── __init__.py                       # Inisialisasi modul Python
+    ├── publisher_member_function.py      # Node Publisher (Talker)
+    └── subscriber_member_function.py     # Node Subscriber (Listener)
 ```
 
-##### Template Minimal `package.xml` (Python):
+##### 3. File `py_pubsub/publisher_member_function.py` (Publisher Node / Talker)
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+class MinimalPublisher(Node):
+
+    def __init__(self):
+        super().__init__('minimal_publisher')
+        self.publisher_ = self.create_publisher(String, 'chatter', 10)
+        timer_period = 0.5  # Kirim pesan setiap 0.5 detik (2 Hz)
+        self.timer = self.create_timer(timer_period, self.timer_callback)
+        self.i = 0
+
+    def timer_callback(self):
+        msg = String()
+        msg.data = f'Hello World: {self.i}'
+        self.publisher_.publish(msg)
+        self.get_logger().info(f'Publishing: "{msg.data}"')
+        self.i += 1
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    minimal_publisher = MinimalPublisher()
+    try:
+        rclpy.spin(minimal_publisher)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        minimal_publisher.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+##### 4. File `py_pubsub/subscriber_member_function.py` (Subscriber Node / Listener)
+```python
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import String
+
+
+class MinimalSubscriber(Node):
+
+    def __init__(self):
+        super().__init__('minimal_subscriber')
+        self.subscription = self.create_subscription(
+            String,
+            'chatter',
+            self.listener_callback,
+            10)
+        self.subscription  # Mencegah warning unused variable
+
+    def listener_callback(self, msg):
+        self.get_logger().info(f'I heard: "{msg.data}"')
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    minimal_subscriber = MinimalSubscriber()
+    try:
+        rclpy.spin(minimal_subscriber)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        minimal_subscriber.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()
+```
+
+##### 5. File `setup.py`
+```python
+from setuptools import find_packages, setup
+
+package_name = 'py_pubsub'
+
+setup(
+    name=package_name,
+    version='0.0.1',
+    packages=find_packages(exclude=['test']),
+    data_files=[
+        ('share/ament_index/resource_index/packages',
+            ['resource/' + package_name]),
+        ('share/' + package_name, ['package.xml']),
+    ],
+    install_requires=['setuptools'],
+    zip_safe=True,
+    maintainer='User',
+    maintainer_email='user@todo.todo',
+    description='Contoh sederhana Publisher dan Subscriber ROS 2 Jazzy (Python)',
+    license='Apache-2.0',
+    tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'talker = py_pubsub.publisher_member_function:main',
+            'listener = py_pubsub.subscriber_member_function:main',
+        ],
+    },
+)
+```
+
+##### 6. File `setup.cfg`
+```ini
+[develop]
+script_dir=$base/lib/py_pubsub
+[install]
+install_scripts=$base/lib/py_pubsub
+```
+
+##### 7. File `package.xml`
 ```xml
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>my_py_pkg</name>
+  <name>py_pubsub</name>
   <version>0.0.1</version>
-  <description>Template paket Python ROS 2 Jazzy</description>
+  <description>Contoh sederhana Publisher dan Subscriber ROS 2 Jazzy (Python)</description>
   <maintainer email="user@todo.todo">User</maintainer>
   <license>Apache-2.0</license>
 
   <depend>rclpy</depend>
+  <depend>std_msgs</depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
@@ -668,132 +687,168 @@ my_py_pkg/
 </package>
 ```
 
-##### Template Minimal `setup.py` (Python):
-```python
-import os
-from glob import glob
-from setuptools import find_packages, setup
+##### 8. Kompilasi & Menjalankan Node Python
+```bash
+# Build paket py_pubsub
+cd ~/ros2_ws
+colcon build --packages-select py_pubsub
+source install/setup.bash
 
-package_name = 'my_py_pkg'
+# Terminal 1: Jalankan Publisher (Talker)
+ros2 run py_pubsub talker
 
-setup(
-    name=package_name,
-    version='0.0.1',
-    packages=find_packages(exclude=['test']),
-    data_files=[
-        ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-        # Daftarkan direktori launch jika tersedia:
-        # (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
-    ],
-    install_requires=['setuptools'],
-    zip_safe=True,
-    maintainer='User',
-    maintainer_email='user@todo.todo',
-    description='Template paket Python ROS 2 Jazzy',
-    license='Apache-2.0',
-    tests_require=['pytest'],
-    entry_points={
-        'console_scripts': [
-            'sample_node = my_py_pkg.sample_node:main',
-        ],
-    },
-)
-```
-
-##### Template Minimal `setup.cfg` (Python):
-```ini
-[develop]
-script_dir=$base/lib/my_py_pkg
-[install]
-install_scripts=$base/lib/my_py_pkg
-```
-
-##### Template Kode Node Python Polosan (`my_py_pkg/sample_node.py`):
-```python
-import rclpy
-from rclpy.node import Node
-
-
-class SampleNode(Node):
-
-    def __init__(self):
-        super().__init__('sample_node')
-        self.get_logger().info('Sample Node Python aktif!')
-        self.timer = self.create_timer(1.0, self.timer_callback)
-
-    def timer_callback(self):
-        self.get_logger().info('Hello dari ROS 2 Jazzy Python!')
-
-
-def main(args=None):
-    rclpy.init(args=args)
-    node = SampleNode()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
-
-
-if __name__ == '__main__':
-    main()
+# Terminal 2: Jalankan Subscriber (Listener)
+source install/setup.bash
+ros2 run py_pubsub listener
 ```
 
 ---
 
-#### 4. Template Folder & File Paket Interface Kustom (`ament_cmake`)
+#### B. Template Proyek C++ (`ament_cmake`): `cpp_pubsub`
 
-Struktur folder paket interface (seperti halnya paket `aruku_interfaces` pada repositori ini):
-```text
-my_interfaces/
-├── CMakeLists.txt              # Menjalankan rosidl_generate_interfaces
-├── package.xml                 # Bergantung pada rosidl_default_generators & rosidl_default_runtime
-├── msg/                        # Definisi pesan kustom (.msg)
-│   └── SampleData.msg
-├── srv/                        # Definisi layanan kustom (.srv)
-│   └── TriggerCmd.srv
-└── action/                     # Definisi aksi kustom (.action)
-    └── MoveGoal.action
+##### 1. Pembuatan Paket
+```bash
+cd ~/ros2_ws/src
+ros2 pkg create --build-type ament_cmake cpp_pubsub --dependencies rclcpp std_msgs
 ```
 
-##### Template `CMakeLists.txt` untuk Interface:
+##### 2. Struktur Folder Paket `cpp_pubsub`
+```text
+cpp_pubsub/
+├── CMakeLists.txt                        # Konfigurasi build & target CMake
+├── package.xml                           # Metadata paket & dependensi ROS 2
+└── src/
+    ├── publisher_member_function.cpp     # Node Publisher (Talker C++)
+    └── subscriber_member_function.cpp    # Node Subscriber (Listener C++)
+```
+
+##### 3. File `src/publisher_member_function.cpp` (Publisher Node / Talker)
+```cpp
+#include <chrono>
+#include <memory>
+#include <string>
+
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+
+using namespace std::chrono_literals;
+
+class MinimalPublisher : public rclcpp::Node
+{
+public:
+  MinimalPublisher() : Node("minimal_publisher"), count_(0)
+  {
+    publisher_ = this->create_publisher<std_msgs::msg::String>("chatter", 10);
+    timer_ = this->create_wall_timer(
+      500ms, std::bind(&MinimalPublisher::timer_callback, this));
+  }
+
+private:
+  void timer_callback()
+  {
+    auto message = std_msgs::msg::String();
+    message.data = "Hello, world! " + std::to_string(count_++);
+    RCLCPP_INFO(this->get_logger(), "Publishing: '%s'", message.data.c_str());
+    publisher_->publish(message);
+  }
+
+  rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr publisher_;
+  size_t count_;
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<MinimalPublisher>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+##### 4. File `src/subscriber_member_function.cpp` (Subscriber Node / Listener)
+```cpp
+#include <memory>
+
+#include "rclcpp/rclcpp.hpp"
+#include "std_msgs/msg/string.hpp"
+
+class MinimalSubscriber : public rclcpp::Node
+{
+public:
+  MinimalSubscriber() : Node("minimal_subscriber")
+  {
+    subscription_ = this->create_subscription<std_msgs::msg::String>(
+      "chatter", 10,
+      std::bind(&MinimalSubscriber::topic_callback, this, std::placeholders::_1));
+  }
+
+private:
+  void topic_callback(const std_msgs::msg::String & msg) const
+  {
+    RCLCPP_INFO(this->get_logger(), "I heard: '%s'", msg.data.c_str());
+  }
+
+  rclcpp::Subscription<std_msgs::msg::String>::SharedPtr subscription_;
+};
+
+int main(int argc, char * argv[])
+{
+  rclcpp::init(argc, argv);
+  rclcpp::spin(std::make_shared<MinimalSubscriber>());
+  rclcpp::shutdown();
+  return 0;
+}
+```
+
+##### 5. File `CMakeLists.txt`
 ```cmake
 cmake_minimum_required(VERSION 3.8)
-project(my_interfaces)
+project(cpp_pubsub)
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
 
 find_package(ament_cmake REQUIRED)
-find_package(rosidl_default_generators REQUIRED)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
 
-# Daftarkan semua file msg, srv, dan action:
-rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/SampleData.msg"
-  # "srv/TriggerCmd.srv"
-  # "action/MoveGoal.action"
+# 1. Target Executable Publisher (talker)
+add_executable(talker src/publisher_member_function.cpp)
+ament_target_dependencies(talker rclcpp std_msgs)
+
+# 2. Target Executable Subscriber (listener)
+add_executable(listener src/subscriber_member_function.cpp)
+ament_target_dependencies(listener rclcpp std_msgs)
+
+# Pemasangan executable ke direktori lib paket
+install(TARGETS
+  talker
+  listener
+  DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
 ```
 
-##### Template `package.xml` untuk Interface:
+##### 6. File `package.xml`
 ```xml
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>my_interfaces</name>
+  <name>cpp_pubsub</name>
   <version>0.0.1</version>
-  <description>Definisi interface kustom ROS 2 Jazzy</description>
+  <description>Contoh sederhana Publisher dan Subscriber ROS 2 Jazzy (C++)</description>
   <maintainer email="user@todo.todo">User</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
-  <buildtool_depend>rosidl_default_generators</buildtool_depend>
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
 
-  <exec_depend>rosidl_default_runtime</exec_depend>
-  <member_of_group>rosidl_interface_packages</member_of_group>
+  <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_lint_common</test_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
@@ -801,16 +856,31 @@ ament_package()
 </package>
 ```
 
+##### 7. Kompilasi & Menjalankan Node C++
+```bash
+# Build paket cpp_pubsub
+cd ~/ros2_ws
+colcon build --packages-select cpp_pubsub
+source install/setup.bash
+
+# Terminal 1: Jalankan Talker
+ros2 run cpp_pubsub talker
+
+# Terminal 2: Jalankan Listener
+source install/setup.bash
+ros2 run cpp_pubsub listener
+```
+
 ---
 
-### 8.4 Instalasi Dependensi & Kompilasi Proyek Ini (`mujoco-op3`)
+### 8.5 Instalasi Dependensi & Kompilasi Proyek Ini (`mujoco-op3`)
 
-Setelah lingkungan ROS 2 Jazzy siap, ikuti langkah berikut untuk menginstal dependensi khusus dan mengompilasi workspace **mujoco-op3**:
+Setelah memahami lingkungan ROS 2 dan MuJoCo, berikut adalah instruksi untuk membangun workspace simulasi **mujoco-op3**:
 
-#### 1. Prasyarat Dependensi Python MuJoCo
-Instalasi engine fisika MuJoCo dan modul numerik Python:
+#### 1. Verifikasi Prasyarat MuJoCo & NumPy
+Pastikan modul MuJoCo telah terpasang sesuai [Panduan Instalasi MuJoCo](#82-panduan-instalasi-physics-engine-mujoco):
 ```bash
-pip3 install mujoco numpy
+pip3 install mujoco numpy --break-system-packages
 ```
 
 #### 2. Resolusi Otomatis Dependensi ROS 2 (Opsional via rosdep)
