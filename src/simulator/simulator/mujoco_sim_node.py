@@ -122,7 +122,7 @@ class MujocoSimNode(Node):
 
         try:
             default_model = os.path.join(
-                get_package_share_directory('op3_mujoco_sim'), 'models', 'scene.xml')
+                get_package_share_directory('simulator'), 'models', 'scene.xml')
         except Exception:
             default_model = os.path.abspath(os.path.join(
                 os.path.dirname(__file__), '..', 'models', 'scene.xml'))

@@ -7,7 +7,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    pkg_sim_share = get_package_share_directory('op3_mujoco_sim')
+    pkg_sim_share = get_package_share_directory('simulator')
     pkg_aruku_share = get_package_share_directory('aruku')
 
     default_model_path = os.path.join(pkg_sim_share, 'models', 'scene.xml')
@@ -33,7 +33,7 @@ def generate_launch_description():
 
     # 1. Node Simulasi MuJoCo
     sim_node = Node(
-        package='op3_mujoco_sim',
+        package='simulator',
         executable='sim_node',
         name='mujoco_sim_node',
         output='screen',

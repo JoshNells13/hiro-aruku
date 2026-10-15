@@ -817,13 +817,13 @@ Untuk menjalankan sistem secara lengkap, buka **3 tab / terminal terpisah** (pas
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 launch op3_mujoco_sim sim.launch.py
+ros2 launch simulator sim.launch.py
 ```
 > Window 3D MuJoCo Viewer akan terbuka. Robot langsung berdiri tegak seimbang di atas arena dan menunggu perintah dari walking engine.
 
 *(Opsi Headless / tanpa window 3D GUI)*:
 ```bash
-ros2 launch op3_mujoco_sim sim.launch.py use_gui:=false
+ros2 launch simulator sim.launch.py use_gui:=false
 ```
 
 ---
@@ -847,7 +847,7 @@ Jalankan node teleop:
 source /opt/ros/jazzy/setup.bash
 source install/setup.bash
 
-ros2 run op3_mujoco_sim walk_teleop
+ros2 run simulator walk_teleop
 ```
 
 Gunakan tombol keyboard berikut pada jendela terminal teleop:

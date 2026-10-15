@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>op3_mujoco_sim</name>
+  <name>simulator</name>
   <version>0.1.0</version>
   <description>Simulasi MuJoCo Robot Humanoid Hiro untuk Walking Engine (ROS 2 Jazzy)</description>
   <maintainer email="user@todo.todo">Joshua</maintainer>
